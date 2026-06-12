@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33b71fae31e6c7d438e8566dc713e666, type: 3}
+  m_Name: ChristmasTree
+  m_EditorClassIdentifier: 
+  m_FormatVersion: 20231020
+  m_SplatCount: 1774942
+  m_BoundsMin: {x: -6.3179517, y: -6.308466, z: -3.3271189}
+  m_BoundsMax: {x: 5.8966227, y: 6.540399, z: 6.227344}
+  m_DataHash:
+    serializedVersion: 2
+    Hash: 9020a8751fd924b685d5df95c13d4ea0
+  m_PosFormat: 2
+  m_ScaleFormat: 2
+  m_SHFormat: 3
+  m_ColorFormat: 2
+  m_PosData: {fileID: 4900000, guid: c2c1b00d122f9844890cc1ae866986b2, type: 3}
+  m_ColorData: {fileID: 4900000, guid: 1a067dd678eb4d84aaa86f4f5fd0489a, type: 3}
+  m_OtherData: {fileID: 4900000, guid: 5c07edc2f21a796449f8f6ec3fab9b26, type: 3}
+  m_SHData: {fileID: 4900000, guid: 08b3e00ec7de31b44a9ab2c8d2ad5434, type: 3}
+  m_ChunkData: {fileID: 4900000, guid: 981dc92cdcc8333489f44aa418039de1, type: 3}
+  m_Cameras: []

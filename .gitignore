@@ -1,0 +1,42 @@
+# Unity generated folders
+/Library/
+/Temp/
+/Obj/
+/obj/
+/Build/
+/Builds/
+/Logs/
+/UserSettings/
+/.vs/
+
+# Unity generated files
+*.csproj
+*.sln
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity crash and memory captures
+sysinfo.txt
+*.stackdump
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# Large local scratch folders
+/textvr/
+
+# External source checkouts kept beside the Unity project.
+# UnityGaussianSplatting changes are recorded in Patches/.
+/PlayCanvasEngine/
+/UnityGaussianSplatting/
+
