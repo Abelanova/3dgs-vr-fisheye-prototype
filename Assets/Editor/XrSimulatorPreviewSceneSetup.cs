@@ -101,7 +101,7 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.FindProperty("splat").objectReferenceValue = splat;
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
-        CreateProjectionPanel(fovController, splat);
+        CreateProjectionPanel(camera, fovController, splat);
         CreateTreeMarker();
         CreateSimulator(cameraObject.transform, leftController.transform, rightController.transform);
 
@@ -225,19 +225,28 @@ public static class XrSimulatorPreviewSceneSetup
             property.objectReferenceValue = value;
     }
 
-    static void CreateProjectionPanel(CameraFovController fovController, GaussianSplatRenderer splat)
+    static void CreateProjectionPanel(Camera eventCamera, CameraFovController fovController, GaussianSplatRenderer splat)
     {
         CreateEventSystem();
 
         var canvasObject = new GameObject("Projection Control Panel");
 
         var canvas = canvasObject.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = eventCamera;
         canvas.sortingOrder = 20;
         canvasObject.AddComponent<GraphicRaycaster>();
+        canvasObject.AddComponent<TrackedDeviceGraphicRaycaster>();
 
         var rect = canvasObject.GetComponent<RectTransform>();
-        SetRect(rect, new Vector2(20, 20), new Vector2(440.0f, 178.0f), Vector2.zero, Vector2.zero);
+        rect.sizeDelta = new Vector2(440.0f, 178.0f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+
+        var fixedPose = canvasObject.AddComponent<FixedProjectionPanelPose>();
+        var fixedPoseSo = new SerializedObject(fixedPose);
+        fixedPoseSo.FindProperty("targetCamera").objectReferenceValue = eventCamera;
+        fixedPoseSo.FindProperty("panelRect").objectReferenceValue = rect;
+        fixedPoseSo.ApplyModifiedPropertiesWithoutUndo();
 
         var background = canvasObject.AddComponent<Image>();
         background.color = new Color(0.02f, 0.025f, 0.03f, 0.62f);
@@ -263,7 +272,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fisheyeSlider = CreateSlider("Fisheye Slider", canvasObject.transform, 0.0f, 1.0f, 0.0f);
         SetRect((RectTransform)fisheyeSlider.transform, new Vector2(96, -102), new Vector2(246, 24), new Vector2(0, 1), new Vector2(0, 1));
 
-        var hint = CreateText("Hint", canvasObject.transform, "Keys: , . fisheye   - = FOV   Backspace reset", 12, TextAnchor.MiddleLeft);
+        var hint = CreateText("Hint", canvasObject.transform, "Drag with trigger or mouse; keys: , . fisheye   - = FOV", 12, TextAnchor.MiddleLeft);
         hint.color = new Color(0.78f, 0.82f, 0.86f, 0.82f);
         SetRect(hint.rectTransform, new Vector2(20, -142), new Vector2(400, 20), new Vector2(0, 1), new Vector2(0, 1));
 
