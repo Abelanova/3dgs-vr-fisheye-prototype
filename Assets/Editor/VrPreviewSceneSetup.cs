@@ -12,6 +12,7 @@ public static class VrPreviewSceneSetup
     static readonly Vector3 OriginPosition = new(0.0f, 0.0f, -7.0f);
     static readonly Vector3 EyeLocalPosition = new(0.0f, 1.6f, 0.0f);
     static readonly Vector3 LookTarget = new(0.0f, 1.4f, 0.0f);
+    static readonly Vector3 SplatRotationEuler = new(-90.0f, -35.0f, 0.0f);
 
     [MenuItem("Tools/VR Preview/Create 3DGS VR Preview Scene")]
     public static void CreatePreviewScene()
@@ -60,6 +61,7 @@ public static class VrPreviewSceneSetup
         controllerSo.ApplyModifiedPropertiesWithoutUndo();
 
         var splatObject = new GameObject("ChristmasTree Gaussian Splat");
+        splatObject.transform.rotation = Quaternion.Euler(SplatRotationEuler);
         var splat = splatObject.AddComponent<GaussianSplatRenderer>();
         splat.m_Asset = asset;
         splat.m_SplatScale = 0.75f;

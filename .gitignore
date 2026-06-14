@@ -8,6 +8,7 @@
 /Logs/
 /UserSettings/
 /.vs/
+/.utmp/
 
 # Unity generated files
 *.csproj
@@ -39,4 +40,3 @@ Thumbs.db
 # UnityGaussianSplatting changes are recorded in Patches/.
 /PlayCanvasEngine/
 /UnityGaussianSplatting/
-
