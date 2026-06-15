@@ -5,7 +5,7 @@ public sealed class FixedProjectionPanelPose : MonoBehaviour
     [SerializeField] Camera targetCamera;
     [SerializeField] float distance = 1.35f;
     [SerializeField] Vector2 viewportPosition = new(0.24f, 0.2f);
-    [SerializeField] float viewportWidth = 0.28f;
+    [SerializeField] float viewportWidth = 0.19f;
     [SerializeField] RectTransform panelRect;
 
     void LateUpdate()

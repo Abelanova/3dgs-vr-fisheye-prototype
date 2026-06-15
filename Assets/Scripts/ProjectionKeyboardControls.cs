@@ -6,7 +6,7 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
 {
     [SerializeField] CameraFovController fovController;
     [SerializeField] GaussianSplatRenderer splat;
-    [SerializeField] float fovStepPerSecond = 35.0f;
+    [SerializeField] float fovStepPerSecond = 70.0f;
     [SerializeField] float fisheyeStepPerSecond = 0.35f;
     [SerializeField] float defaultFov = 60.0f;
     [SerializeField] float defaultFisheye = 0.0f;

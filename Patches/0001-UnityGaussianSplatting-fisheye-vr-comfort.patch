@@ -1,8 +1,8 @@
 ﻿diff --git a/package/Editor/GaussianSplatRendererEditor.cs b/package/Editor/GaussianSplatRendererEditor.cs
-index f5bad0d..efb7d8f 100644
+index f5bad0d..43de466 100644
 --- a/package/Editor/GaussianSplatRendererEditor.cs
 +++ b/package/Editor/GaussianSplatRendererEditor.cs
-@@ -24,9 +24,11 @@ namespace GaussianSplatting.Editor
+@@ -24,9 +24,12 @@ namespace GaussianSplatting.Editor
          SerializedProperty m_PropRenderOrder;
          SerializedProperty m_PropSplatScale;
          SerializedProperty m_PropOpacityScale;
@@ -10,11 +10,12 @@ index f5bad0d..efb7d8f 100644
          SerializedProperty m_PropSHOrder;
          SerializedProperty m_PropSHOnly;
          SerializedProperty m_PropSortNthFrame;
++        SerializedProperty m_PropFisheyeFieldOfView;
 +        SerializedProperty m_PropFisheyeStrength;
          SerializedProperty m_PropRenderMode;
          SerializedProperty m_PropPointDisplaySize;
          SerializedProperty m_PropCutouts;
-@@ -64,9 +66,11 @@ namespace GaussianSplatting.Editor
+@@ -64,9 +67,12 @@ namespace GaussianSplatting.Editor
              m_PropRenderOrder = serializedObject.FindProperty("m_RenderOrder");
              m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
              m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
@@ -22,11 +23,12 @@ index f5bad0d..efb7d8f 100644
              m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
              m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
              m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
++            m_PropFisheyeFieldOfView = serializedObject.FindProperty("m_FisheyeFieldOfView");
 +            m_PropFisheyeStrength = serializedObject.FindProperty("m_FisheyeStrength");
              m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
              m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
              m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
-@@ -108,9 +112,11 @@ namespace GaussianSplatting.Editor
+@@ -108,9 +114,12 @@ namespace GaussianSplatting.Editor
              EditorGUILayout.PropertyField(m_PropRenderOrder);
              EditorGUILayout.PropertyField(m_PropSplatScale);
              EditorGUILayout.PropertyField(m_PropOpacityScale);
@@ -34,11 +36,12 @@ index f5bad0d..efb7d8f 100644
              EditorGUILayout.PropertyField(m_PropSHOrder);
              EditorGUILayout.PropertyField(m_PropSHOnly);
              EditorGUILayout.PropertyField(m_PropSortNthFrame);
++            EditorGUILayout.PropertyField(m_PropFisheyeFieldOfView, new GUIContent("Fisheye Field Of View"));
 +            EditorGUILayout.PropertyField(m_PropFisheyeStrength, new GUIContent("Fisheye Strength"));
  
              EditorGUILayout.Space();
              GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
-@@ -444,4 +450,4 @@ namespace GaussianSplatting.Editor
+@@ -444,4 +453,4 @@ namespace GaussianSplatting.Editor
              Debug.Log($"Exported PLY {path} with {aliveCount:N0} splats");
          }
      }
@@ -46,7 +49,7 @@ index f5bad0d..efb7d8f 100644
 \ No newline at end of file
 +}
 diff --git a/package/Runtime/GaussianSplatRenderer.cs b/package/Runtime/GaussianSplatRenderer.cs
-index 9e080b9..de3b509 100644
+index 9e080b9..6820ff4 100644
 --- a/package/Runtime/GaussianSplatRenderer.cs
 +++ b/package/Runtime/GaussianSplatRenderer.cs
 @@ -142,6 +142,7 @@ namespace GaussianSplatting.Runtime
@@ -57,7 +60,7 @@ index 9e080b9..de3b509 100644
                  mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, gs.m_PointDisplaySize);
                  mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                  mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, gs.m_SHOnly ? 1 : 0);
-@@ -231,12 +232,17 @@ namespace GaussianSplatting.Runtime
+@@ -231,12 +232,19 @@ namespace GaussianSplatting.Runtime
          [Range(0.05f, 20.0f)]
          [Tooltip("Additional scaling factor for opacity")]
          public float m_OpacityScale = 1.0f;
@@ -70,12 +73,14 @@ index 9e080b9..de3b509 100644
          public bool m_SHOnly;
          [Range(1,30)] [Tooltip("Sort splats only every N frames")]
          public int m_SortNthFrame = 1;
++        [Range(20.0f, 320.0f)] [Tooltip("Virtual vertical field of view used by fisheye projection. Values above Unity's camera FOV range enable tiny-planet style views.")]
++        public float m_FisheyeFieldOfView = 60.0f;
 +        [Range(0, 1)] [Tooltip("Fisheye projection strength. 0 uses the normal camera projection.")]
 +        public float m_FisheyeStrength;
  
          public RenderMode m_RenderMode = RenderMode.Splats;
          [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
-@@ -302,6 +308,7 @@ namespace GaussianSplatting.Runtime
+@@ -302,6 +310,7 @@ namespace GaussianSplatting.Runtime
              public static readonly int OrderBuffer = Shader.PropertyToID("_OrderBuffer");
              public static readonly int SplatScale = Shader.PropertyToID("_SplatScale");
              public static readonly int SplatOpacityScale = Shader.PropertyToID("_SplatOpacityScale");
@@ -83,7 +88,7 @@ index 9e080b9..de3b509 100644
              public static readonly int SplatSize = Shader.PropertyToID("_SplatSize");
              public static readonly int SplatCount = Shader.PropertyToID("_SplatCount");
              public static readonly int SHOrder = Shader.PropertyToID("_SHOrder");
-@@ -319,6 +326,8 @@ namespace GaussianSplatting.Runtime
+@@ -319,6 +328,8 @@ namespace GaussianSplatting.Runtime
              public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
              public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
              public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
@@ -92,7 +97,7 @@ index 9e080b9..de3b509 100644
              public static readonly int CameraTargetTexture = Shader.PropertyToID("_CameraTargetTexture");
              public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
              public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
-@@ -590,6 +599,7 @@ namespace GaussianSplatting.Runtime
+@@ -590,6 +601,7 @@ namespace GaussianSplatting.Runtime
              int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
              Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
              Vector4 camPos = cam.transform.position;
@@ -100,7 +105,7 @@ index 9e080b9..de3b509 100644
  
              // calculate view dependent data for each splat
              SetAssetDataOnCS(cmb, KernelIndices.CalcViewData);
-@@ -600,8 +610,11 @@ namespace GaussianSplatting.Runtime
+@@ -600,8 +612,11 @@ namespace GaussianSplatting.Runtime
  
              cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecScreenParams, screenPar);
              cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
@@ -112,7 +117,7 @@ index 9e080b9..de3b509 100644
              cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
              cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
  
-@@ -618,6 +631,7 @@ namespace GaussianSplatting.Runtime
+@@ -618,6 +633,7 @@ namespace GaussianSplatting.Runtime
              worldToCamMatrix.m20 *= -1;
              worldToCamMatrix.m21 *= -1;
              worldToCamMatrix.m22 *= -1;
@@ -120,7 +125,7 @@ index 9e080b9..de3b509 100644
  
              // calculate distance to the camera for each splat
              cmd.BeginSample(s_ProfSort);
-@@ -627,6 +641,8 @@ namespace GaussianSplatting.Runtime
+@@ -627,6 +643,8 @@ namespace GaussianSplatting.Runtime
              cmd.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcDistances, Props.SplatPos, m_GpuPosData);
              cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatFormat, (int)m_Asset.posFormat);
              cmd.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, worldToCamMatrix * matrix);
@@ -129,7 +134,7 @@ index 9e080b9..de3b509 100644
              cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatCount, m_SplatCount);
              cmd.SetComputeIntParam(m_CSSplatUtilities, Props.SplatChunkCount, m_GpuChunksValid ? m_GpuChunks.count : 0);
              m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcDistances, out uint gsX, out _, out _);
-@@ -638,6 +654,34 @@ namespace GaussianSplatting.Runtime
+@@ -638,6 +656,34 @@ namespace GaussianSplatting.Runtime
              cmd.EndSample(s_ProfSort);
          }
  
@@ -139,12 +144,12 @@ index 9e080b9..de3b509 100644
 +            if (t <= 0 || cam.orthographic)
 +                return (Vector4.zero, Vector4.zero);
 +
-+            Matrix4x4 projection = cam.projectionMatrix;
-+            float p00 = projection[0, 0];
-+            float p11 = projection[1, 1];
++            float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 320.0f);
++            float halfVerticalFov = verticalFov * Mathf.Deg2Rad * 0.5f;
++            float p11 = 1.0f / Mathf.Tan(halfVerticalFov);
++            float p00 = p11 / Mathf.Max(cam.aspect, 0.0001f);
 +            float halfFovX = Mathf.Atan2(1.0f, p00);
 +            float halfFovY = Mathf.Atan2(1.0f, p11);
-+            float verticalFov = cam.fieldOfView;
 +            float kMin = verticalFov / 180.0f + 0.15f;
 +            float kStart = Mathf.Max(1.0f, verticalFov / 180.0f + 0.05f);
 +            float k = kStart * Mathf.Pow(kMin / kStart, t);
@@ -164,7 +169,7 @@ index 9e080b9..de3b509 100644
          public void Update()
          {
              var curHash = m_Asset ? m_Asset.dataHash : new Hash128();
-@@ -1083,4 +1127,4 @@ namespace GaussianSplatting.Runtime
+@@ -1083,4 +1129,4 @@ namespace GaussianSplatting.Runtime
  
          public GraphicsBuffer GpuEditDeleted => m_GpuEditDeleted;
      }
@@ -237,7 +242,7 @@ index 2124d39..cbb4926 100644
  {
      float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
 diff --git a/package/Shaders/SplatUtilities.compute b/package/Shaders/SplatUtilities.compute
-index 77241da..c3d434a 100644
+index 77241da..9288c74 100644
 --- a/package/Shaders/SplatUtilities.compute
 +++ b/package/Shaders/SplatUtilities.compute
 @@ -42,6 +42,8 @@ float4x4 _MatrixWorldToObject;
@@ -255,7 +260,7 @@ index 77241da..c3d434a 100644
  
 -    _SplatSortDistances[idx] = FloatToSortableUint(pos.z);
 +    float radialSortDistance = -length(pos);
-+    float sortDistance = lerp(pos.z, radialSortDistance, saturate(_FisheyeParams.x));
++    float sortDistance = _FisheyeParams.x > 0.0001 ? radialSortDistance : pos.z;
 +    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);
  }
  

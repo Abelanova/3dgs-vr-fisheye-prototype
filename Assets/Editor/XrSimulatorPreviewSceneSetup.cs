@@ -13,7 +13,6 @@ using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Readers;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Simulation;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
-using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 public static class XrSimulatorPreviewSceneSetup
@@ -92,8 +91,13 @@ public static class XrSimulatorPreviewSceneSetup
         splat.m_OpacityScale = 1.0f;
         splat.m_SHOrder = 3;
         splat.m_SortNthFrame = 1;
+        splat.m_FisheyeFieldOfView = 60.0f;
         splat.m_FisheyeStrength = 0.0f;
         splat.m_NearFadeDistance = 0.8f;
+
+        fovControllerSo = new SerializedObject(fovController);
+        fovControllerSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
 
         var keyboardControls = cameraObject.AddComponent<ProjectionKeyboardControls>();
         var keyboardControlsSo = new SerializedObject(keyboardControls);
@@ -102,7 +106,6 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
         CreateProjectionPanel(camera, fovController, splat);
-        CreateTreeMarker();
         CreateSimulator(cameraObject.transform, leftController.transform, rightController.transform);
 
         var lightObject = new GameObject("Directional Light");
@@ -163,16 +166,6 @@ public static class XrSimulatorPreviewSceneSetup
         ray.selectInput = selectReader;
         ray.uiPressInput = selectReader;
 
-        var lineRenderer = target.AddComponent<LineRenderer>();
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.positionCount = 2;
-        lineRenderer.startWidth = 0.006f;
-        lineRenderer.endWidth = 0.001f;
-        lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
-        lineRenderer.startColor = new Color(0.55f, 0.75f, 1.0f, 0.55f);
-        lineRenderer.endColor = new Color(0.55f, 0.75f, 1.0f, 0.05f);
-
-        target.AddComponent<XRInteractorLineVisual>();
     }
 
     static void CreateSimulator(Transform head, Transform leftController, Transform rightController)
@@ -239,7 +232,7 @@ public static class XrSimulatorPreviewSceneSetup
         canvasObject.AddComponent<TrackedDeviceGraphicRaycaster>();
 
         var rect = canvasObject.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(440.0f, 178.0f);
+        rect.sizeDelta = new Vector2(360.0f, 146.0f);
         rect.pivot = new Vector2(0.5f, 0.5f);
 
         var fixedPose = canvasObject.AddComponent<FixedProjectionPanelPose>();
@@ -251,30 +244,30 @@ public static class XrSimulatorPreviewSceneSetup
         var background = canvasObject.AddComponent<Image>();
         background.color = new Color(0.02f, 0.025f, 0.03f, 0.62f);
 
-        var title = CreateText("Title", canvasObject.transform, "Projection", 20, TextAnchor.MiddleLeft);
-        SetRect(title.rectTransform, new Vector2(20, -14), new Vector2(400, 28), new Vector2(0, 1), new Vector2(0, 1));
+        var title = CreateText("Title", canvasObject.transform, "Projection", 17, TextAnchor.MiddleLeft);
+        SetRect(title.rectTransform, new Vector2(16, -10), new Vector2(328, 24), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fovLabel = CreateText("FOV Label", canvasObject.transform, "FOV", 16, TextAnchor.MiddleLeft);
-        SetRect(fovLabel.rectTransform, new Vector2(20, -58), new Vector2(70, 24), new Vector2(0, 1), new Vector2(0, 1));
+        var fovLabel = CreateText("FOV Label", canvasObject.transform, "FOV", 13, TextAnchor.MiddleLeft);
+        SetRect(fovLabel.rectTransform, new Vector2(16, -48), new Vector2(58, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fovValue = CreateText("FOV Value", canvasObject.transform, "", 16, TextAnchor.MiddleRight);
-        SetRect(fovValue.rectTransform, new Vector2(356, -58), new Vector2(54, 24), new Vector2(0, 1), new Vector2(0, 1));
+        var fovValue = CreateText("FOV Value", canvasObject.transform, "", 13, TextAnchor.MiddleRight);
+        SetRect(fovValue.rectTransform, new Vector2(292, -48), new Vector2(44, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fovSlider = CreateSlider("FOV Slider", canvasObject.transform, 20.0f, 140.0f, 60.0f);
-        SetRect((RectTransform)fovSlider.transform, new Vector2(96, -58), new Vector2(246, 24), new Vector2(0, 1), new Vector2(0, 1));
+        var fovSlider = CreateSlider("FOV Slider", canvasObject.transform, 20.0f, 320.0f, 60.0f);
+        SetRect((RectTransform)fovSlider.transform, new Vector2(78, -48), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fisheyeLabel = CreateText("Fisheye Label", canvasObject.transform, "Fisheye", 16, TextAnchor.MiddleLeft);
-        SetRect(fisheyeLabel.rectTransform, new Vector2(20, -102), new Vector2(70, 24), new Vector2(0, 1), new Vector2(0, 1));
+        var fisheyeLabel = CreateText("Fisheye Label", canvasObject.transform, "Fisheye", 13, TextAnchor.MiddleLeft);
+        SetRect(fisheyeLabel.rectTransform, new Vector2(16, -84), new Vector2(58, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fisheyeValue = CreateText("Fisheye Value", canvasObject.transform, "", 16, TextAnchor.MiddleRight);
-        SetRect(fisheyeValue.rectTransform, new Vector2(356, -102), new Vector2(54, 24), new Vector2(0, 1), new Vector2(0, 1));
+        var fisheyeValue = CreateText("Fisheye Value", canvasObject.transform, "", 13, TextAnchor.MiddleRight);
+        SetRect(fisheyeValue.rectTransform, new Vector2(292, -84), new Vector2(44, 20), new Vector2(0, 1), new Vector2(0, 1));
 
         var fisheyeSlider = CreateSlider("Fisheye Slider", canvasObject.transform, 0.0f, 1.0f, 0.0f);
-        SetRect((RectTransform)fisheyeSlider.transform, new Vector2(96, -102), new Vector2(246, 24), new Vector2(0, 1), new Vector2(0, 1));
+        SetRect((RectTransform)fisheyeSlider.transform, new Vector2(78, -84), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
         var hint = CreateText("Hint", canvasObject.transform, "Drag with trigger or mouse; keys: , . fisheye   - = FOV", 12, TextAnchor.MiddleLeft);
         hint.color = new Color(0.78f, 0.82f, 0.86f, 0.82f);
-        SetRect(hint.rectTransform, new Vector2(20, -142), new Vector2(400, 20), new Vector2(0, 1), new Vector2(0, 1));
+        SetRect(hint.rectTransform, new Vector2(16, -116), new Vector2(328, 18), new Vector2(0, 1), new Vector2(0, 1));
 
         var panel = canvasObject.AddComponent<ProjectionControlPanel>();
         var panelSo = new SerializedObject(panel);
@@ -322,7 +315,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fillAreaRect = fillArea.AddComponent<RectTransform>();
         SetStretch(fillAreaRect, new Vector2(5, 8), new Vector2(-5, -8));
 
-        var fill = CreateImage("Fill", fillArea.transform, new Color(0.42f, 0.72f, 0.95f, 0.85f));
+        var fill = CreateImage("Fill", fillArea.transform, new Color(0.36f, 0.38f, 0.41f, 0.72f));
         SetStretch(fill.rectTransform, Vector2.zero, Vector2.zero);
 
         var handleArea = new GameObject("Handle Slide Area");
@@ -331,7 +324,7 @@ public static class XrSimulatorPreviewSceneSetup
         SetStretch(handleAreaRect, new Vector2(8, 0), new Vector2(-8, 0));
 
         var handle = CreateImage("Handle", handleArea.transform, new Color(0.92f, 0.95f, 0.98f, 0.95f));
-        handle.rectTransform.sizeDelta = new Vector2(18, 28);
+        handle.rectTransform.sizeDelta = new Vector2(14, 24);
 
         var slider = sliderObject.AddComponent<Slider>();
         slider.minValue = minValue;
@@ -369,22 +362,6 @@ public static class XrSimulatorPreviewSceneSetup
         rect.anchorMax = Vector2.one;
         rect.offsetMin = offsetMin;
         rect.offsetMax = offsetMax;
-    }
-
-    static void CreateTreeMarker()
-    {
-        var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        marker.name = "Tree Direction Marker";
-        marker.transform.position = new Vector3(0.0f, 1.6f, -0.6f);
-        marker.transform.localScale = Vector3.one * 0.18f;
-
-        var renderer = marker.GetComponent<MeshRenderer>();
-        if (renderer == null)
-            return;
-
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-        mat.color = new Color(0.1f, 1.0f, 0.35f, 1.0f);
-        renderer.sharedMaterial = mat;
     }
 
     static void ApplyProjectSettings()
