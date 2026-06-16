@@ -1,4 +1,141 @@
-﻿diff --git a/package/Editor/GaussianSplatRendererEditor.cs b/package/Editor/GaussianSplatRendererEditor.cs
+﻿diff --git a/package/Editor/GaussianSplatAssetCreator.cs b/package/Editor/GaussianSplatAssetCreator.cs
+index 1d6770d..1f493c1 100644
+--- a/package/Editor/GaussianSplatAssetCreator.cs
++++ b/package/Editor/GaussianSplatAssetCreator.cs
+@@ -23,6 +23,9 @@ namespace GaussianSplatting.Editor
+         const string kCamerasJson = "cameras.json";
+         const string kPrefQuality = "nesnausk.GaussianSplatting.CreatorQuality";
+         const string kPrefOutputFolder = "nesnausk.GaussianSplatting.CreatorOutputFolder";
++        const string kPrefMaxSplats = "nesnausk.GaussianSplatting.CreatorMaxSplats";
++        const int kDefaultMaxSplats = 1_000_000;
++        const int kLargeImportWarningSplats = 2_000_000;
+ 
+         enum DataQuality
+         {
+@@ -38,6 +41,7 @@ namespace GaussianSplatting.Editor
+ 
+         [SerializeField] string m_InputFile;
+         [SerializeField] bool m_ImportCameras = true;
++        [SerializeField] int m_MaxSplats;
+ 
+         [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
+         [SerializeField] DataQuality m_Quality = DataQuality.Medium;
+@@ -70,6 +74,7 @@ namespace GaussianSplatting.Editor
+         {
+             m_Quality = (DataQuality)EditorPrefs.GetInt(kPrefQuality, (int)DataQuality.Medium);
+             m_OutputFolder = EditorPrefs.GetString(kPrefOutputFolder, "Assets/GaussianAssets");
++            m_MaxSplats = EditorPrefs.GetInt(kPrefMaxSplats, kDefaultMaxSplats);
+         }
+ 
+         void OnEnable()
+@@ -84,6 +89,10 @@ namespace GaussianSplatting.Editor
+             var rect = EditorGUILayout.GetControlRect(true);
+             m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY/SPZ File"), m_InputFile, "ply,spz", "PointCloudFile");
+             m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
++            EditorGUI.BeginChangeCheck();
++            m_MaxSplats = Mathf.Max(0, EditorGUILayout.IntField(new GUIContent("Max Splats", "0 imports every splat. Use this to create smaller assets from very large files without loading the whole file into memory."), m_MaxSplats));
++            if (EditorGUI.EndChangeCheck())
++                EditorPrefs.SetInt(kPrefMaxSplats, m_MaxSplats);
+ 
+             if (m_InputFile != m_PrevFilePath && !string.IsNullOrWhiteSpace(m_InputFile))
+             {
+@@ -102,8 +111,17 @@ namespace GaussianSplatting.Editor
+                 m_PrevFilePath = m_InputFile;
+             }
+ 
++            int importSplatCount = GetImportSplatCount();
++
+             if (m_PrevVertexCount > 0)
+-                EditorGUILayout.LabelField("File Size", $"{EditorUtility.FormatBytes(m_PrevFileSize)} - {m_PrevVertexCount:N0} splats");
++            {
++                string splatLabel = importSplatCount == m_PrevVertexCount
++                    ? $"{m_PrevVertexCount:N0} splats"
++                    : $"{importSplatCount:N0} / {m_PrevVertexCount:N0} splats";
++                EditorGUILayout.LabelField("File Size", $"{EditorUtility.FormatBytes(m_PrevFileSize)} - {splatLabel}");
++                if (m_MaxSplats <= 0 && m_PrevVertexCount > kLargeImportWarningSplats)
++                    EditorGUILayout.HelpBox("Full import of this many splats can use several GB of temporary memory and may crash Unity. Use Max Splats for a stable preview asset.", MessageType.Warning);
++            }
+             else
+                 GUILayout.Space(EditorGUIUtility.singleLineHeight);
+ 
+@@ -126,13 +144,13 @@ namespace GaussianSplatting.Editor
+             }
+ 
+             long sizePos = 0, sizeOther = 0, sizeCol = 0, sizeSHs = 0, totalSize = 0;
+-            if (m_PrevVertexCount > 0)
++            if (importSplatCount > 0)
+             {
+-                sizePos = GaussianSplatAsset.CalcPosDataSize(m_PrevVertexCount, m_FormatPos);
+-                sizeOther = GaussianSplatAsset.CalcOtherDataSize(m_PrevVertexCount, m_FormatScale);
+-                sizeCol = GaussianSplatAsset.CalcColorDataSize(m_PrevVertexCount, m_FormatColor);
+-                sizeSHs = GaussianSplatAsset.CalcSHDataSize(m_PrevVertexCount, m_FormatSH);
+-                long sizeChunk = isUsingChunks ? GaussianSplatAsset.CalcChunkDataSize(m_PrevVertexCount) : 0;
++                sizePos = GaussianSplatAsset.CalcPosDataSize(importSplatCount, m_FormatPos);
++                sizeOther = GaussianSplatAsset.CalcOtherDataSize(importSplatCount, m_FormatScale);
++                sizeCol = GaussianSplatAsset.CalcColorDataSize(importSplatCount, m_FormatColor);
++                sizeSHs = GaussianSplatAsset.CalcSHDataSize(importSplatCount, m_FormatSH);
++                long sizeChunk = isUsingChunks ? GaussianSplatAsset.CalcChunkDataSize(importSplatCount) : 0;
+                 totalSize = sizePos + sizeOther + sizeCol + sizeSHs + sizeChunk;
+             }
+ 
+@@ -186,6 +204,15 @@ namespace GaussianSplatting.Editor
+             }
+         }
+ 
++        int GetImportSplatCount()
++        {
++            if (m_PrevVertexCount <= 0)
++                return 0;
++            if (m_MaxSplats <= 0)
++                return m_PrevVertexCount;
++            return Mathf.Min(m_MaxSplats, m_PrevVertexCount);
++        }
++
+         void ApplyQualityLevel()
+         {
+             switch (m_Quality)
+@@ -258,11 +285,21 @@ namespace GaussianSplatting.Editor
+                 m_ErrorMessage = $"Output folder must be within project, was '{m_OutputFolder}'";
+                 return;
+             }
++            if (m_MaxSplats <= 0 && m_PrevVertexCount > kLargeImportWarningSplats)
++            {
++                bool continueFullImport = EditorUtility.DisplayDialog(
++                    "Large Gaussian Splat Import",
++                    $"This will import all {m_PrevVertexCount:N0} splats and can use several GB of temporary memory. Unity may crash.\n\nSet Max Splats to {kDefaultMaxSplats:N0} for a safer preview import.",
++                    "Import All Anyway",
++                    "Cancel");
++                if (!continueFullImport)
++                    return;
++            }
+             Directory.CreateDirectory(m_OutputFolder);
+ 
+             EditorUtility.DisplayProgressBar(kProgressTitle, "Reading data files", 0.0f);
+             GaussianSplatAsset.CameraInfo[] cameras = LoadJsonCamerasFile(m_InputFile, m_ImportCameras);
+-            using NativeArray<InputSplatData> inputSplats = LoadInputSplatFile(m_InputFile);
++            using NativeArray<InputSplatData> inputSplats = LoadInputSplatFile(m_InputFile, m_MaxSplats);
+             if (inputSplats.Length == 0)
+             {
+                 EditorUtility.ClearProgressBar();
+@@ -339,7 +376,7 @@ namespace GaussianSplatting.Editor
+             Selection.activeObject = savedAsset;
+         }
+ 
+-        NativeArray<InputSplatData> LoadInputSplatFile(string filePath)
++        NativeArray<InputSplatData> LoadInputSplatFile(string filePath, int maxSplats)
+         {
+             NativeArray<InputSplatData> data = default;
+             if (!File.Exists(filePath))
+@@ -349,7 +386,7 @@ namespace GaussianSplatting.Editor
+             }
+             try
+             {
+-                GaussianFileReader.ReadFile(filePath, out data);
++                GaussianFileReader.ReadFile(filePath, maxSplats, out data);
+             }
+             catch (Exception ex)
+             {
+diff --git a/package/Editor/GaussianSplatRendererEditor.cs b/package/Editor/GaussianSplatRendererEditor.cs
 index f5bad0d..43de466 100644
 --- a/package/Editor/GaussianSplatRendererEditor.cs
 +++ b/package/Editor/GaussianSplatRendererEditor.cs
@@ -48,6 +185,125 @@ index f5bad0d..43de466 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/package/Editor/Utils/GaussianFileReader.cs b/package/Editor/Utils/GaussianFileReader.cs
+index 187b7b5..529f46f 100644
+--- a/package/Editor/Utils/GaussianFileReader.cs
++++ b/package/Editor/Utils/GaussianFileReader.cs
+@@ -43,16 +43,31 @@ namespace GaussianSplatting.Editor.Utils
+         }
+ 
+         public static unsafe void ReadFile(string filePath, out NativeArray<InputSplatData> splats)
++        {
++            ReadFile(filePath, 0, out splats);
++        }
++
++        public static unsafe void ReadFile(string filePath, int maxSplats, out NativeArray<InputSplatData> splats)
+         {
+             if (isPLY(filePath))
+             {
+                 NativeArray<byte> plyRawData;
+                 List<(string, PLYFileReader.ElementType)> attributes;
+-                PLYFileReader.ReadFile(filePath, out var splatCount, out var vertexStride, out attributes, out plyRawData);
++                PLYFileReader.ReadFile(filePath, maxSplats, out var splatCount, out var vertexStride, out attributes, out plyRawData);
+                 string attrError = CheckPLYAttributes(attributes);
+                 if (!string.IsNullOrEmpty(attrError))
++                {
++                    plyRawData.Dispose();
+                     throw new IOException($"PLY file is probably not a Gaussian Splat file? Missing properties: {attrError}");
+-                splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
++                }
++                try
++                {
++                    splats = PLYDataToSplats(plyRawData, splatCount, vertexStride, attributes);
++                }
++                finally
++                {
++                    plyRawData.Dispose();
++                }
+                 ReorderSHs(splatCount, (float*)splats.GetUnsafePtr());
+                 LinearizeData(splats);
+                 return;
+@@ -60,6 +75,7 @@ namespace GaussianSplatting.Editor.Utils
+             if (isSPZ(filePath))
+             {
+                 SPZFileReader.ReadFile(filePath, out splats);
++                DownsampleSplats(ref splats, maxSplats);
+                 return;
+             }
+             throw new IOException($"File {filePath} is not a supported format");
+@@ -238,5 +254,20 @@ namespace GaussianSplatting.Editor.Utils
+             job.splatData = splatData;
+             job.Schedule(splatData.Length, 4096).Complete();
+         }
++
++        static void DownsampleSplats(ref NativeArray<InputSplatData> splats, int maxSplats)
++        {
++            if (maxSplats <= 0 || splats.Length <= maxSplats)
++                return;
++
++            NativeArray<InputSplatData> sampled = new(maxSplats, Allocator.Persistent);
++            for (int i = 0; i < maxSplats; ++i)
++            {
++                int srcIndex = (int)((long)i * splats.Length / maxSplats);
++                sampled[i] = splats[srcIndex];
++            }
++            splats.Dispose();
++            splats = sampled;
++        }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/package/Editor/Utils/PLYFileReader.cs b/package/Editor/Utils/PLYFileReader.cs
+index 6a6b7ed..2360c5f 100644
+--- a/package/Editor/Utils/PLYFileReader.cs
++++ b/package/Editor/Utils/PLYFileReader.cs
+@@ -65,14 +65,42 @@ namespace GaussianSplatting.Editor.Utils
+         }
+ 
+         public static void ReadFile(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, out NativeArray<byte> vertices)
++        {
++            ReadFile(filePath, 0, out vertexCount, out vertexStride, out attrs, out vertices);
++        }
++
++        public static void ReadFile(string filePath, int maxVertexCount, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, out NativeArray<byte> vertices)
+         {
+             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+             ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
+ 
++            int sourceVertexCount = vertexCount;
++            if (maxVertexCount > 0 && maxVertexCount < vertexCount)
++                vertexCount = maxVertexCount;
++
+             vertices = new NativeArray<byte>(vertexCount * vertexStride, Allocator.Persistent);
+-            var readBytes = fs.Read(vertices);
+-            if (readBytes != vertices.Length)
+-                throw new IOException($"PLY {filePath} read error, expected {vertices.Length} data bytes got {readBytes}");
++            if (vertexCount == sourceVertexCount)
++            {
++                var readBytes = fs.Read(vertices);
++                if (readBytes != vertices.Length)
++                    throw new IOException($"PLY {filePath} read error, expected {vertices.Length} data bytes got {readBytes}");
++                return;
++            }
++
++            long dataStart = fs.Position;
++            byte[] row = new byte[vertexStride];
++            for (int i = 0; i < vertexCount; ++i)
++            {
++                int srcIndex = (int)((long)i * sourceVertexCount / vertexCount);
++                fs.Seek(dataStart + (long)srcIndex * vertexStride, SeekOrigin.Begin);
++                int readBytes = fs.Read(row, 0, vertexStride);
++                if (readBytes != vertexStride)
++                    throw new IOException($"PLY {filePath} read error, expected {vertexStride} bytes for vertex {srcIndex} got {readBytes}");
++
++                int dstOffset = i * vertexStride;
++                for (int b = 0; b < vertexStride; ++b)
++                    vertices[dstOffset + b] = row[b];
++            }
+         }
+ 
+         public enum ElementType
 diff --git a/package/Runtime/GaussianSplatRenderer.cs b/package/Runtime/GaussianSplatRenderer.cs
 index 9e080b9..6820ff4 100644
 --- a/package/Runtime/GaussianSplatRenderer.cs
