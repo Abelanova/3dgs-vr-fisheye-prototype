@@ -36,7 +36,30 @@ Thumbs.db
 # Large local scratch folders
 /textvr/
 
+# Local Gaussian splat datasets and generated imports
+*.ply
+*.ply.meta
+*.sog
+*.sog.meta
+Assets/GaussianAssets/
+Assets/GaussianAssets.meta
+Assets/**/*.ply
+Assets/**/*.ply.meta
+Assets/**/*.sog
+Assets/**/*.sog.meta
+Assets/**/*_pos.bytes
+Assets/**/*_pos.bytes.meta
+Assets/**/*_oth.bytes
+Assets/**/*_oth.bytes.meta
+Assets/**/*_col.bytes
+Assets/**/*_col.bytes.meta
+Assets/**/*_shs.bytes
+Assets/**/*_shs.bytes.meta
+Assets/**/*_chk.bytes
+Assets/**/*_chk.bytes.meta
+Assets/**/*_sog.asset
+Assets/**/*_sog.asset.meta
+
 # External source checkouts kept beside the Unity project.
-# UnityGaussianSplatting changes are recorded in Patches/.
 /PlayCanvasEngine/
 /UnityGaussianSplatting/

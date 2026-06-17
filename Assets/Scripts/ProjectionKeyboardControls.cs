@@ -16,6 +16,7 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
         if (Keyboard.current == null)
             return;
 
+        ResolveSplatTarget();
         float dt = Time.unscaledDeltaTime;
 
         if (splat != null)
@@ -49,6 +50,22 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
 
             if (fovController != null)
                 fovController.verticalFieldOfView = defaultFov;
+        }
+    }
+
+    void ResolveSplatTarget()
+    {
+        if (splat != null && splat.isActiveAndEnabled && splat.m_Asset != null)
+            return;
+
+        var renderers = Object.FindObjectsByType<GaussianSplatRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var renderer in renderers)
+        {
+            if (renderer.isActiveAndEnabled && renderer.m_Asset != null)
+            {
+                splat = renderer;
+                return;
+            }
         }
     }
 }

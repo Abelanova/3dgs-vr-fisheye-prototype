@@ -1,5 +1,13 @@
 {
   "dependencies": {
+    "com.ollihuttunen.sog-gaussian-splatting": {
+      "version": "file:com.ollihuttunen.sog-gaussian-splatting",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      }
+    },
     "com.unity.ai.navigation": {
       "version": "2.0.9",
       "depth": 0,
@@ -89,6 +97,13 @@
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.4",
       "depth": 2,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.nuget.newtonsoft-json": {
+      "version": "3.2.1",
+      "depth": 0,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -264,9 +279,9 @@
       "url": "https://packages.unity.com"
     },
     "org.nesnausk.gaussian-splatting": {
-      "version": "file:../UnityGaussianSplatting/package",
+      "version": "file:org.nesnausk.gaussian-splatting",
       "depth": 0,
-      "source": "local",
+      "source": "embedded",
       "dependencies": {
         "com.unity.burst": "1.8.8",
         "com.unity.collections": "2.1.4",
