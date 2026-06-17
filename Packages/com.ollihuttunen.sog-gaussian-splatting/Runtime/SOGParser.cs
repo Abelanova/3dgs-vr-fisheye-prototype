@@ -220,13 +220,14 @@ namespace GaussianSplatting.SOG
             int numClusters = meta.shN.count;
             float[] cb = meta.shN.codebook;
 
-            int totalCoeffs = 0;
+            int coeffsPerColor = 0;
             for (int d = 1; d <= bands; d++)
-                totalCoeffs += (2 * d + 1) * 3;
+                coeffsPerColor += 2 * d + 1;
+            int totalCoeffs = coeffsPerColor * 3;
 
             Color32[] labelPix    = load(meta.shN.files[1]); // shN_labels.webp
             Color32[] centroidPix = load(meta.shN.files[0]); // shN_centroids.webp
-            int pixelsPerCentroid = (totalCoeffs + 2) / 3;
+            int centroidWidth = 64 * coeffsPerColor;
 
             var shHigher = new float[n][];
             for (int i = 0; i < n; i++)
@@ -234,16 +235,21 @@ namespace GaussianSplatting.SOG
                 shHigher[i] = new float[totalCoeffs];
                 int clusterIdx = Math.Min(
                     labelPix[i].r | (labelPix[i].g << 8), numClusters - 1);
-                int centBase = clusterIdx * pixelsPerCentroid;
-                int ci = 0;
-                for (int p = 0; p < pixelsPerCentroid && ci < totalCoeffs; p++)
+
+                // SOG stores 64 palette entries per row. Each entry occupies
+                // coeffsPerColor pixels horizontally, with RGB holding the three
+                // color channels for that coefficient.
+                int entryX = (clusterIdx % 64) * coeffsPerColor;
+                int entryY = clusterIdx / 64;
+                for (int coeff = 0; coeff < coeffsPerColor; coeff++)
                 {
-                    int px = centBase + p;
-                    if (px >= centroidPix.Length) break;
+                    int px = entryY * centroidWidth + entryX + coeff;
+                    if (px < 0 || px >= centroidPix.Length) break;
                     Color32 c = centroidPix[px];
-                    if (ci < totalCoeffs) shHigher[i][ci++] = cb[c.r];
-                    if (ci < totalCoeffs) shHigher[i][ci++] = cb[c.g];
-                    if (ci < totalCoeffs) shHigher[i][ci++] = cb[c.b];
+                    int dst = coeff * 3;
+                    shHigher[i][dst]     = cb[c.r];
+                    shHigher[i][dst + 1] = cb[c.g];
+                    shHigher[i][dst + 2] = cb[c.b];
                 }
             }
             return shHigher;

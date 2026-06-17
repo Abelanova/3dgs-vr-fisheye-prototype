@@ -110,7 +110,9 @@ namespace GaussianSplatting.SOG
             int off = 0;
             for (int i = 0; i < n; i++)
             {
-                uint packedRot = EncodeQuatSmallest3(data.rotations[i]);
+                Quaternion q = data.rotations[i];
+                Vector4 packed = PackSmallest3Rotation(q);
+                uint packedRot = EncodeQuatToNorm10(packed);
                 WriteUInt(buf, off, packedRot); off += 4;
 
                 // Scale: codebook stores log-scale values (same as PLY format); apply exp + abs like Aras
@@ -304,6 +306,49 @@ namespace GaussianSplatting.SOG
         // -------------------------------------------------------------------------
         // Low-level binary write helpers (little-endian)
         // -------------------------------------------------------------------------
+
+        static Vector4 PackSmallest3Rotation(Quaternion q)
+        {
+            float len = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (len > 0f)
+            {
+                q.x /= len;
+                q.y /= len;
+                q.z /= len;
+                q.w /= len;
+            }
+
+            int index = 0;
+            float maxV = Mathf.Abs(q.x);
+            if (Mathf.Abs(q.y) > maxV) { index = 1; maxV = Mathf.Abs(q.y); }
+            if (Mathf.Abs(q.z) > maxV) { index = 2; maxV = Mathf.Abs(q.z); }
+            if (Mathf.Abs(q.w) > maxV) { index = 3; maxV = Mathf.Abs(q.w); }
+
+            float a, b, c, omitted;
+            switch (index)
+            {
+                case 0: a = q.y; b = q.z; c = q.w; omitted = q.x; break;
+                case 1: a = q.x; b = q.z; c = q.w; omitted = q.y; break;
+                case 2: a = q.x; b = q.y; c = q.w; omitted = q.z; break;
+                default: a = q.x; b = q.y; c = q.z; omitted = q.w; break;
+            }
+
+            float sign = omitted >= 0f ? 1f : -1f;
+            const float invSqrt2 = 0.70710678118f;
+            return new Vector4(
+                a * sign * invSqrt2 + 0.5f,
+                b * sign * invSqrt2 + 0.5f,
+                c * sign * invSqrt2 + 0.5f,
+                index / 3.0f);
+        }
+
+        static uint EncodeQuatToNorm10(Vector4 v)
+        {
+            return (uint)(v.x * 1023.5f)
+                 | ((uint)(v.y * 1023.5f) << 10)
+                 | ((uint)(v.z * 1023.5f) << 20)
+                 | ((uint)(v.w * 3.5f) << 30);
+        }
 
         static void WriteFloat(byte[] buf, int offset, float value)
         {

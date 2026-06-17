@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace GaussianSplatting.SOG.Editor
 {
-    [ScriptedImporter(version: 5, ext: "sog")]
+    [ScriptedImporter(version: 6, ext: "sog")]
     public class SOGImporter : ScriptedImporter
     {
         internal const string kOutputSuffix = "_sog";
@@ -36,18 +36,15 @@ namespace GaussianSplatting.SOG.Editor
             string pathColor = $"{outputBase}_col.bytes";
             string pathSH    = $"{outputBase}_shs.bytes";
 
-            bool bytesExist =
-                File.Exists(pathPos)   &&
-                File.Exists(pathOther) &&
-                File.Exists(pathColor) &&
-                File.Exists(pathSH);
+            bool shouldDecode = ShouldDecode(sogPath, pathPos, pathOther, pathColor, pathSH);
 
             Vector3 boundsMin = Vector3.zero, boundsMax = Vector3.one;
             int splatCount = 0;
 
-            if (!bytesExist)
+            if (shouldDecode)
             {
-                // First import: decode SOG and write the four binary buffers.
+                // Decode SOG and write the four binary buffers. Existing buffers are
+                // reused only when they are newer than the source .sog.
                 SOGRawData rawData;
                 try
                 {
@@ -94,6 +91,19 @@ namespace GaussianSplatting.SOG.Editor
             marker.name = baseName;
             ctx.AddObjectToAsset("GaussianSplatAsset", marker);
             ctx.SetMainObject(marker);
+        }
+
+        static bool ShouldDecode(string sogPath, params string[] outputPaths)
+        {
+            DateTime sourceTime = File.GetLastWriteTimeUtc(sogPath);
+            foreach (string path in outputPaths)
+            {
+                if (!File.Exists(path))
+                    return true;
+                if (File.GetLastWriteTimeUtc(path) < sourceTime)
+                    return true;
+            }
+            return false;
         }
     }
 }

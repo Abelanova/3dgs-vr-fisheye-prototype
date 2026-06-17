@@ -38,15 +38,17 @@ namespace GaussianSplatting.SOG.Editor
                 if (!File.Exists(sogPath))
                     continue;
 
+                string pathPos   = basePath + "_pos.bytes";
                 string pathOther = basePath + "_oth.bytes";
                 string pathColor = basePath + "_col.bytes";
                 string pathSH    = basePath + "_shs.bytes";
 
-                if (!File.Exists(pathOther) || !File.Exists(pathColor) || !File.Exists(pathSH))
+                if (!File.Exists(pathPos) || !File.Exists(pathOther) || !File.Exists(pathColor) || !File.Exists(pathSH))
                     continue;
 
-                // Load the four TextAssets (they were just imported)
-                var taPos   = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
+                // Load the four fixed companion TextAssets. The current callback
+                // path can be any one of them depending on Unity import order.
+                var taPos   = AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos);
                 var taOther = AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther);
                 var taColor = AssetDatabase.LoadAssetAtPath<TextAsset>(pathColor);
                 var taSH    = AssetDatabase.LoadAssetAtPath<TextAsset>(pathSH);
