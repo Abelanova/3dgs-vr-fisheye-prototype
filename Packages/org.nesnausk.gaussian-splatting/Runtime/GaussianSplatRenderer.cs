@@ -241,7 +241,7 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
-        [Range(20.0f, 320.0f)] [Tooltip("Virtual vertical field of view used by fisheye projection. Values above Unity's camera FOV range enable tiny-planet style views.")]
+        [Range(20.0f, 360.0f)] [Tooltip("Virtual vertical field of view used by fisheye projection. Values above Unity's camera FOV range enable tiny-planet style views.")]
         public float m_FisheyeFieldOfView = 60.0f;
         [Range(0, 1)] [Tooltip("Fisheye projection strength. 0 uses the normal camera projection.")]
         public float m_FisheyeStrength;
@@ -662,7 +662,7 @@ namespace GaussianSplatting.Runtime
             if (t <= 0 || cam.orthographic)
                 return (Vector4.zero, Vector4.zero);
 
-            float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 320.0f);
+            float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 359.9f);
             float halfVerticalFov = verticalFov * Mathf.Deg2Rad * 0.5f;
             float p11 = 1.0f / Mathf.Tan(halfVerticalFov);
             float p00 = p11 / Mathf.Max(cam.aspect, 0.0001f);

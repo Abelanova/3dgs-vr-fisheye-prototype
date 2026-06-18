@@ -238,7 +238,13 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
             float gTheta = k * sinTk / cosTk;
             float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
             float2 ndc = float2(projMat00 * fisheyeS * centerViewPos.x, projMat11 * fisheyeS * centerViewPos.y);
-            centerClipPos.xy = float2(ndc.x, -ndc.y) * centerClipPos.w;
+            float nearPlane = _ProjectionParams.y;
+            float farPlane = _ProjectionParams.z;
+            float depthNdc = saturate((negZ - nearPlane) / max(farPlane - nearPlane, 1e-6));
+            #if defined(UNITY_REVERSED_Z)
+                depthNdc = 1.0 - depthNdc;
+            #endif
+            centerClipPos = float4(ndc.x, -ndc.y, depthNdc, 1.0);
         }
     }
 

@@ -253,7 +253,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fovValue = CreateText("FOV Value", canvasObject.transform, "", 13, TextAnchor.MiddleRight);
         SetRect(fovValue.rectTransform, new Vector2(292, -48), new Vector2(44, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fovSlider = CreateSlider("FOV Slider", canvasObject.transform, 20.0f, 320.0f, 60.0f);
+        var fovSlider = CreateSlider("FOV Slider", canvasObject.transform, 20.0f, 360.0f, 60.0f);
         SetRect((RectTransform)fovSlider.transform, new Vector2(78, -48), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
         var fisheyeLabel = CreateText("Fisheye Label", canvasObject.transform, "Fisheye", 13, TextAnchor.MiddleLeft);

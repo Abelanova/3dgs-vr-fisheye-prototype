@@ -1560,7 +1560,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 655614025}
   m_Direction: 0
   m_MinValue: 20
-  m_MaxValue: 320
+  m_MaxValue: 360
   m_WholeNumbers: 0
   m_Value: 60
   m_OnValueChanged:
@@ -2322,7 +2322,7 @@ MonoBehaviour:
   m_SortNthFrame: 1
   m_FisheyeFieldOfView: 60
   m_FisheyeStrength: 0
-  m_RenderMode: 1
+  m_RenderMode: 0
   m_PointDisplaySize: 3
   m_Cutouts: []
   m_ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
