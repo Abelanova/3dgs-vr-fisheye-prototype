@@ -238,7 +238,6 @@ public static class XrSimulatorPreviewSceneSetup
         var fixedPose = canvasObject.AddComponent<FixedProjectionPanelPose>();
         var fixedPoseSo = new SerializedObject(fixedPose);
         fixedPoseSo.FindProperty("targetCamera").objectReferenceValue = eventCamera;
-        fixedPoseSo.FindProperty("panelRect").objectReferenceValue = rect;
         fixedPoseSo.ApplyModifiedPropertiesWithoutUndo();
 
         var background = canvasObject.AddComponent<Image>();
