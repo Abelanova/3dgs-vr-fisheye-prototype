@@ -658,9 +658,14 @@ namespace GaussianSplatting.Runtime
 
         (Vector4, Vector4) CalcFisheyeParams(Camera cam)
         {
-            float t = Mathf.Clamp01(m_FisheyeStrength);
-            if (t <= 0 || cam.orthographic)
+            float sliderT = Mathf.Clamp01(m_FisheyeStrength);
+            if (sliderT <= 0 || cam.orthographic)
                 return (Vector4.zero, Vector4.zero);
+
+            // Smoothstep keeps the middle of the control useful while making the
+            // region near zero much less sensitive. Previously a tiny slider move
+            // immediately changed both projection curvature and global sort mode.
+            float t = sliderT * sliderT * (3.0f - 2.0f * sliderT);
 
             float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 359.9f);
             float halfVerticalFov = verticalFov * Mathf.Deg2Rad * 0.5f;

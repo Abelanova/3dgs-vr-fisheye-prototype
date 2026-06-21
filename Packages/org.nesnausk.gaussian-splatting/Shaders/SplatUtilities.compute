@@ -80,8 +80,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     float3 pos = LoadSplatPos(origIdx);
     pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
 
-    float radialSortDistance = -length(pos);
-    float sortDistance = _FisheyeParams.x > 0.0001 ? radialSortDistance : pos.z;
+    // Keep the transparency order independent of the fisheye slider. Blending
+    // between axial and radial sort keys causes a large number of pairwise order
+    // crossings around the middle of the control, producing a sudden global loss
+    // of image quality even though the projection itself changes continuously.
+    float sortDistance = pos.z;
     _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);
 }
 
@@ -160,6 +163,16 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
     float2 diagVec = normalize(float2(offDiag, lambda1 - diag1));
     diagVec.y = -diagVec.y;
     float maxSize = 4096.0;
+    if (_FisheyeParams.x > 0.0001)
+    {
+        // A fisheye can bring splats beside the camera into view. Their projected
+        // covariance grows without bound as the center approaches the camera, so
+        // keep the rendered footprint relative to the current viewport instead of
+        // allowing the legacy 4096 px axis to turn one splat into a full-screen glow.
+        // RenderGaussianSplats expands each stored axis by 2, hence the 0.25 factor
+        // limits the final radius to half of the viewport's shorter dimension.
+        maxSize = max(1.0, min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y)) * 0.25);
+    }
     v1 = min(sqrt(2.0 * lambda1), maxSize) * diagVec;
     v2 = min(sqrt(2.0 * lambda2), maxSize) * float2(diagVec.y, -diagVec.x);
 
