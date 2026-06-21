@@ -5,6 +5,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -18,6 +19,7 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 public static class XrSimulatorPreviewSceneSetup
 {
     const string ScenePath = "Assets/Scenes/XRSimulatorPreview.unity";
+    const string DesktopScenePath = "Assets/Scenes/DesktopPreview.unity";
 
     static readonly string[] SimulatorPrefabPaths =
     {
@@ -119,6 +121,66 @@ public static class XrSimulatorPreviewSceneSetup
         AddSceneToBuildSettings(ScenePath);
 
         Debug.Log("Created Assets/Scenes/XRSimulatorPreview.unity. In Play Mode, use the XR simulator UI/controls to move the simulated HMD and controllers.");
+    }
+
+    [MenuItem("Tools/VR Preview/Create Desktop Preview Scene %#d")]
+    public static void CreateDesktopPreviewScene()
+    {
+        ApplyProjectSettings();
+
+        var previousScene = SceneManager.GetActiveScene();
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+        SceneManager.SetActiveScene(scene);
+        scene.name = "DesktopPreview";
+
+        var cameraObject = new GameObject("Main Camera");
+        cameraObject.tag = "MainCamera";
+        cameraObject.transform.position = new Vector3(0.0f, 1.6f, -4.0f);
+        cameraObject.AddComponent<AudioListener>();
+        cameraObject.AddComponent<DesktopCameraController>();
+
+        var camera = cameraObject.AddComponent<Camera>();
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.02f, 0.025f, 0.03f, 1.0f);
+        camera.nearClipPlane = 0.03f;
+        camera.farClipPlane = 500.0f;
+        camera.fieldOfView = 60.0f;
+        camera.stereoTargetEye = StereoTargetEyeMask.None;
+
+        var splatObject = new GameObject("PutAssetsHere");
+        var splat = splatObject.AddComponent<GaussianSplatRenderer>();
+        splat.m_RenderMode = GaussianSplatRenderer.RenderMode.Splats;
+        splat.m_SHOrder = 3;
+        splat.m_SortNthFrame = 1;
+        splat.m_FisheyeFieldOfView = 60.0f;
+
+        var fovController = cameraObject.AddComponent<CameraFovController>();
+        var fovControllerSo = new SerializedObject(fovController);
+        fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
+        fovControllerSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        fovControllerSo.FindProperty("verticalFov").floatValue = camera.fieldOfView;
+        fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
+
+        var keyboardControls = cameraObject.AddComponent<ProjectionKeyboardControls>();
+        var keyboardControlsSo = new SerializedObject(keyboardControls);
+        keyboardControlsSo.FindProperty("fovController").objectReferenceValue = fovController;
+        keyboardControlsSo.FindProperty("splat").objectReferenceValue = splat;
+        keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
+
+        CreateDesktopProjectionPanel(fovController, splat);
+
+        var lightObject = new GameObject("Directional Light");
+        var light = lightObject.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.intensity = 1.0f;
+        lightObject.transform.rotation = Quaternion.Euler(50.0f, -30.0f, 0.0f);
+
+        EditorSceneManager.SaveScene(scene, DesktopScenePath);
+        AddSceneToBuildSettings(DesktopScenePath);
+        SceneManager.SetActiveScene(previousScene);
+        EditorSceneManager.CloseScene(scene, true);
+
+        Debug.Log("Created Assets/Scenes/DesktopPreview.unity. Open it, assign a GaussianSplatAsset to PutAssetsHere, then enter Play Mode. Use right mouse to look, WASD and Q/E to move, and Shift to move faster.");
     }
 
     static GameObject CreateController(string name, Transform parent, Vector3 fallbackPosition, bool left)
@@ -240,35 +302,64 @@ public static class XrSimulatorPreviewSceneSetup
         fixedPoseSo.FindProperty("targetCamera").objectReferenceValue = eventCamera;
         fixedPoseSo.ApplyModifiedPropertiesWithoutUndo();
 
-        var background = canvasObject.AddComponent<Image>();
+        PopulateProjectionPanel(canvasObject, fovController, splat, "Drag with trigger or mouse; keys: , . fisheye   - = FOV");
+    }
+
+    static void CreateDesktopProjectionPanel(CameraFovController fovController, GaussianSplatRenderer splat)
+    {
+        var eventSystemObject = new GameObject("EventSystem");
+        eventSystemObject.AddComponent<EventSystem>();
+        eventSystemObject.AddComponent<InputSystemUIInputModule>();
+
+        var canvasObject = new GameObject("Projection Control Panel");
+        var canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 20;
+        var canvasScaler = canvasObject.AddComponent<CanvasScaler>();
+        canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+        canvasScaler.scaleFactor = 1.0f;
+        canvasObject.AddComponent<GraphicRaycaster>();
+
+        var panelObject = new GameObject("Panel");
+        panelObject.transform.SetParent(canvasObject.transform, false);
+        var panelRect = panelObject.AddComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0.5f, 0.18f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.18f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.sizeDelta = new Vector2(360.0f, 146.0f);
+        panelRect.localScale = Vector3.one * 0.65f;
+
+        PopulateProjectionPanel(panelObject, fovController, splat, "Right mouse: look   WASD/QE: move   Shift: faster");
+    }
+
+    static void PopulateProjectionPanel(GameObject panelObject, CameraFovController fovController, GaussianSplatRenderer splat, string hintText)
+    {
+        var background = panelObject.AddComponent<Image>();
         background.color = new Color(0.02f, 0.025f, 0.03f, 0.62f);
 
-        var title = CreateText("Title", canvasObject.transform, "Projection", 17, TextAnchor.MiddleLeft);
+        var title = CreateText("Title", panelObject.transform, "Projection", 17, TextAnchor.MiddleLeft);
         SetRect(title.rectTransform, new Vector2(16, -10), new Vector2(328, 24), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fovLabel = CreateText("FOV Label", canvasObject.transform, "FOV", 13, TextAnchor.MiddleLeft);
+        var fovLabel = CreateText("FOV Label", panelObject.transform, "FOV", 13, TextAnchor.MiddleLeft);
         SetRect(fovLabel.rectTransform, new Vector2(16, -48), new Vector2(58, 20), new Vector2(0, 1), new Vector2(0, 1));
-
-        var fovValue = CreateText("FOV Value", canvasObject.transform, "", 13, TextAnchor.MiddleRight);
+        var fovValue = CreateText("FOV Value", panelObject.transform, "", 13, TextAnchor.MiddleRight);
         SetRect(fovValue.rectTransform, new Vector2(292, -48), new Vector2(44, 20), new Vector2(0, 1), new Vector2(0, 1));
-
-        var fovSlider = CreateSlider("FOV Slider", canvasObject.transform, 20.0f, 360.0f, 60.0f);
+        var fovSlider = CreateSlider("FOV Slider", panelObject.transform, 20.0f, 360.0f, 60.0f);
         SetRect((RectTransform)fovSlider.transform, new Vector2(78, -48), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var fisheyeLabel = CreateText("Fisheye Label", canvasObject.transform, "Fisheye", 13, TextAnchor.MiddleLeft);
+        var fisheyeLabel = CreateText("Fisheye Label", panelObject.transform, "Fisheye", 13, TextAnchor.MiddleLeft);
         SetRect(fisheyeLabel.rectTransform, new Vector2(16, -84), new Vector2(58, 20), new Vector2(0, 1), new Vector2(0, 1));
-
-        var fisheyeValue = CreateText("Fisheye Value", canvasObject.transform, "", 13, TextAnchor.MiddleRight);
+        var fisheyeValue = CreateText("Fisheye Value", panelObject.transform, "", 13, TextAnchor.MiddleRight);
         SetRect(fisheyeValue.rectTransform, new Vector2(292, -84), new Vector2(44, 20), new Vector2(0, 1), new Vector2(0, 1));
-
-        var fisheyeSlider = CreateSlider("Fisheye Slider", canvasObject.transform, 0.0f, 1.0f, 0.0f);
+        var fisheyeSlider = CreateSlider("Fisheye Slider", panelObject.transform, 0.0f, 1.0f, 0.0f);
         SetRect((RectTransform)fisheyeSlider.transform, new Vector2(78, -84), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var hint = CreateText("Hint", canvasObject.transform, "Drag with trigger or mouse; keys: , . fisheye   - = FOV", 12, TextAnchor.MiddleLeft);
+        var hint = CreateText("Hint", panelObject.transform, hintText, 12, TextAnchor.MiddleLeft);
         hint.color = new Color(0.78f, 0.82f, 0.86f, 0.82f);
         SetRect(hint.rectTransform, new Vector2(16, -116), new Vector2(328, 18), new Vector2(0, 1), new Vector2(0, 1));
 
-        var panel = canvasObject.AddComponent<ProjectionControlPanel>();
+        var panel = panelObject.AddComponent<ProjectionControlPanel>();
         var panelSo = new SerializedObject(panel);
         panelSo.FindProperty("fovController").objectReferenceValue = fovController;
         panelSo.FindProperty("splat").objectReferenceValue = splat;
