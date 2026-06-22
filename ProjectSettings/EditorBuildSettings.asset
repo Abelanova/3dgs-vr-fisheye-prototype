@@ -9,8 +9,8 @@ EditorBuildSettings:
     path: Assets/Scenes/DesktopPreview.unity
     guid: e44ec45fb0fb38d4f861d9594034a3d2
   - enabled: 1
-    path: Assets/Scenes/XRSimulatorPreview.unity
-    guid: dfb6a59f0171b264d82da6b6169ef657
+    path: Assets/Scenes/XRSimulatorTemplate.unity
+    guid: f28d0e357441cde43afad2d8ac3d41af
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: d4614c7efa2d0a34eb04afb793a0ed3a, type: 2}
