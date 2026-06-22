@@ -74,6 +74,10 @@ namespace GaussianSplatting.Runtime
         {
             if (cam.cameraType == CameraType.Preview)
                 return false;
+            if (cam.TryGetComponent<GaussianSplatProjectionCamera>(out var projectionCamera) &&
+                projectionCamera.isActiveAndEnabled &&
+                projectionCamera.role == GaussianSplatProjectionCameraRole.Output)
+                return false;
             // gather all active & valid splat objects
             m_ActiveSplats.Clear();
             foreach (var kvp in m_Splats)
@@ -599,7 +603,8 @@ namespace GaussianSplatting.Runtime
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
             int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
-            Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
+            bool useEyeTexture = cam.stereoEnabled && eyeW != 0 && eyeH != 0;
+            Vector4 screenPar = new Vector4(useEyeTexture ? eyeW : screenW, useEyeTexture ? eyeH : screenH, 0, 0);
             Vector4 camPos = cam.transform.position;
             var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam);
 
@@ -656,8 +661,15 @@ namespace GaussianSplatting.Runtime
             cmd.EndSample(s_ProfSort);
         }
 
+        public (Vector4, Vector4) GetFisheyeShaderParams(Camera cam) => CalcFisheyeParams(cam);
+
         (Vector4, Vector4) CalcFisheyeParams(Camera cam)
         {
+            if (cam.TryGetComponent<GaussianSplatProjectionCamera>(out var projectionCamera) &&
+                projectionCamera.isActiveAndEnabled &&
+                projectionCamera.role == GaussianSplatProjectionCameraRole.Capture)
+                return (Vector4.zero, Vector4.zero);
+
             float sliderT = Mathf.Clamp01(m_FisheyeStrength);
             if (sliderT <= 0 || cam.orthographic)
                 return (Vector4.zero, Vector4.zero);
