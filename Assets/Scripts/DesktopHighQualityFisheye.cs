@@ -9,6 +9,8 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
 {
     [SerializeField] GaussianSplatRenderer targetSplat;
     [SerializeField, Range(256, 2048)] int faceResolution = 1024;
+    [SerializeField, Min(0.005f)] float positionRefreshDistance = 0.02f;
+    [SerializeField, Range(60.0f, 130.0f)] float directPerspectiveFovLimit = 100.0f;
     [SerializeField] bool highQualityEnabled = true;
 
     static readonly string[] FaceTextureNames =
@@ -34,6 +36,9 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
     RawImage outputImage;
     Material outputMaterial;
     int allocatedResolution;
+    bool hasValidCapture;
+    bool cubemapActive;
+    Vector3 capturedPosition;
 
     bool WantsHighQuality =>
         highQualityEnabled && targetSplat != null && targetSplat.isActiveAndEnabled &&
@@ -55,29 +60,52 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
 
         ResolveTarget();
         EnsureResources();
-        bool active = WantsHighQuality && outputMaterial != null;
+        bool resourcesReady = WantsHighQuality && outputMaterial != null;
+        var (fisheyeParams, fisheyeParams2) = resourcesReady
+            ? targetSplat.GetFisheyeShaderParams(outputCamera)
+            : (Vector4.zero, Vector4.zero);
+        bool fisheyeEnabled = fisheyeParams.x > 0.0001f;
+        if (!resourcesReady)
+            cubemapActive = false;
+        else if (fisheyeEnabled)
+            cubemapActive = true;
+        else
+        {
+            // Hysteresis prevents rapid path switching while the FOV slider sits
+            // around the boundary. Both paths use the same perspective geometry.
+            float threshold = directPerspectiveFovLimit + (cubemapActive ? -5.0f : 5.0f);
+            cubemapActive = outputCamera.fieldOfView > threshold;
+        }
+        bool active = resourcesReady && cubemapActive;
 
         outputMarker.enabled = active;
         outputCanvas.gameObject.SetActive(active);
+        bool needsCapture = active && (!hasValidCapture ||
+            (outputCamera.transform.position - capturedPosition).sqrMagnitude >=
+            positionRefreshDistance * positionRefreshDistance);
         for (int i = 0; i < faceCameras.Length; ++i)
         {
             Camera faceCamera = faceCameras[i];
-            faceCamera.enabled = active;
-            if (!active)
+            faceCamera.enabled = needsCapture;
+            if (!needsCapture)
                 continue;
 
             faceCamera.transform.SetPositionAndRotation(outputCamera.transform.position,
-                outputCamera.transform.rotation * FaceRotations[i]);
+                FaceRotations[i]);
             faceCamera.nearClipPlane = outputCamera.nearClipPlane;
             faceCamera.farClipPlane = outputCamera.farClipPlane;
             faceCamera.depth = outputCamera.depth - 10.0f + i;
         }
 
+        if (needsCapture)
+        {
+            capturedPosition = outputCamera.transform.position;
+            hasValidCapture = true;
+        }
+
         if (!active)
             return;
 
-        var (fisheyeParams, fisheyeParams2) = targetSplat.GetFisheyeShaderParams(outputCamera);
-        bool fisheyeEnabled = fisheyeParams.x > 0.0001f;
         float perspectiveP11 = 1.0f / Mathf.Tan(outputCamera.fieldOfView * Mathf.Deg2Rad * 0.5f);
         float perspectiveP00 = perspectiveP11 / Mathf.Max(outputCamera.aspect, 0.0001f);
         outputMaterial.SetFloat("_FishEnabled", fisheyeEnabled ? 1.0f : 0.0f);
@@ -85,6 +113,8 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
         outputMaterial.SetVector("_FishParams", new Vector4(
             fisheyeParams.y, fisheyeParams.z, fisheyeParams.w, fisheyeParams2.x));
         outputMaterial.SetFloat("_MaxTheta", fisheyeParams2.y);
+        outputMaterial.SetMatrix("_CameraToWorld",
+            Matrix4x4.Rotate(outputCamera.transform.rotation));
         UpdateOutputRect();
     }
 
@@ -148,6 +178,7 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
             camera.allowMSAA = false;
             camera.allowHDR = true;
             camera.stereoTargetEye = StereoTargetEyeMask.None;
+            camera.enabled = false;
             cameraObject.AddComponent<GaussianSplatProjectionCamera>().role =
                 GaussianSplatProjectionCameraRole.Capture;
             var cameraData = camera.GetUniversalAdditionalCameraData();
@@ -181,6 +212,7 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
         outputImage.material = outputMaterial;
         outputImage.texture = faceTextures[4];
         UpdateOutputRect();
+        hasValidCapture = false;
     }
 
     void UpdateOutputRect()
@@ -224,5 +256,7 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
         outputImage = null;
         outputMaterial = null;
         allocatedResolution = 0;
+        hasValidCapture = false;
+        cubemapActive = false;
     }
 }

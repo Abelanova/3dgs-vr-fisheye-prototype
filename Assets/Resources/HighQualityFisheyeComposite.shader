@@ -23,6 +23,7 @@ Shader "Hidden/Gaussian Splatting/High Quality Fisheye Composite"
             float4 _PerspectiveScale;
             float4 _FishParams; // x=k, y=1/k, z=projection scale x, w=projection scale y
             float _MaxTheta;
+            float4x4 _CameraToWorld;
 
             v2f vert(appdata v)
             {
@@ -73,7 +74,8 @@ Shader "Hidden/Gaussian Splatting/High Quality Fisheye Composite"
                     float3 perspectiveDirection = normalize(float3(
                         ndc.x / max(abs(_PerspectiveScale.x), 1e-6),
                         ndc.y / max(abs(_PerspectiveScale.y), 1e-6), 1.0));
-                    return SampleFaces(perspectiveDirection);
+                    float3 worldDirection = mul((float3x3)_CameraToWorld, perspectiveDirection);
+                    return SampleFaces(worldDirection);
                 }
 
                 float2 p = float2(ndc.x / max(abs(_FishParams.z), 1e-6),
@@ -87,7 +89,8 @@ Shader "Hidden/Gaussian Splatting/High Quality Fisheye Composite"
                 sincos(theta, sinTheta, cosTheta);
                 float2 radial = r > 1e-6 ? p / r : 0;
                 float3 direction = float3(radial * sinTheta, cosTheta);
-                return SampleFaces(direction);
+                float3 worldDirection = mul((float3x3)_CameraToWorld, direction);
+                return SampleFaces(worldDirection);
             }
             ENDHLSL
         }

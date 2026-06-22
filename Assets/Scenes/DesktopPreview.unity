@@ -806,6 +806,8 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   targetSplat: {fileID: 2107022773}
   faceResolution: 1024
+  positionRefreshDistance: 0.02
+  directPerspectiveFovLimit: 100
   highQualityEnabled: 1
 --- !u!114 &1052589775
 MonoBehaviour:
