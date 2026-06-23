@@ -118,7 +118,7 @@ namespace GaussianSplatting.SOG
                 float lz = minZ + (vz / 65535f) * rangeZ;
                 positions[i] = new Vector3(
                     InvLogTransform(lx),
-                    -InvLogTransform(ly),  // negate Y: SOG Y-down → Unity Y-up
+                    -InvLogTransform(ly),  // SOG image/model convention → Unity scene orientation
                     InvLogTransform(lz));
             }
             return positions;
@@ -167,7 +167,7 @@ namespace GaussianSplatting.SOG
                     case 2: x=b;  y=d;  z=c;  w=a;  break; // qy dropped: a=qw,b=qx,c=qz,d=qy
                     default:x=b;  y=c;  z=d;  w=a;  break; // qz dropped: a=qw,b=qx,c=qy,d=qz
                 }
-                rots[i] = new Quaternion(-x, y, -z, w); // negate qx,qz for Y-down → Y-up: R_Unity = M_Y*R_SOG*M_Y
+                rots[i] = new Quaternion(-x, y, -z, w); // match the Y reflection applied to positions
             }
             return rots;
         }

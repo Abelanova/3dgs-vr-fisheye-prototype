@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace GaussianSplatting.SOG.Editor
 {
-    [ScriptedImporter(version: 6, ext: "sog")]
+    [ScriptedImporter(version: 8, ext: "sog")]
     public class SOGImporter : ScriptedImporter
     {
         internal const string kOutputSuffix = "_sog";

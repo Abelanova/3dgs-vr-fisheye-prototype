@@ -13,7 +13,7 @@ SOG is a compressed 3D Gaussian Splatting format by PlayCanvas that achieves ~15
 - **Editor import** — drag a `.sog` file into the Unity Project window; it auto-imports as a `GaussianSplatAsset`
 - **Full quality** — uses Float32 buffers (no lossy re-compression)
 - **Higher-order SH** — supports spherical harmonics up to band 3 (15 coefficients)
-- **Correct coordinate conversion** — handles SOG's Y-down → Unity Y-up transform for positions, rotations, and SH coefficients
+- **Correct coordinate conversion** — keeps positions, rotations, and SH coefficients consistent while adapting the scene orientation for Unity
 - **Runtime loader component** — `SOGRuntimeLoader` MonoBehaviour for assigning pre-imported assets at runtime
 
 ---
@@ -129,10 +129,9 @@ Alpha channel in `quats.webp`: `252 + dropped_component_index`.
 
 **Opacity:** `sh0.webp` alpha channel is direct linear `[0,1]` = `byte/255`. Not a logit, not a codebook lookup.
 
-**Y-axis coordinate conversion** (SOG Y-down → Unity Y-up):
-- Position: `(x, -y, z)`
-- Quaternion: `(-qx, qy, -qz, qw)` — negate qx and qz (not qy!)
-- SH coefficients: negate bands with odd Y parity (sh1, sh4, sh5, sh9, sh10, sh11)
+**Y-axis scene conversion:** position, quaternion, and SH parity are transformed
+together. This preserves the trained view-dependent color while presenting the
+scene upright in Unity.
 
 ---
 

@@ -184,12 +184,10 @@ namespace GaussianSplatting.SOG
         //   sh1..shF = higher-order SH coefficients (3 floats each)
         //   shPadding = 3 floats for 16-byte alignment
         //
-        // Y-flip sign: when we negate Y (SOG Y-down → Unity Y-up), SH basis
-        // functions with odd Y parity must be negated to keep shading correct.
-        // Affected (0-based coeff index): 0,3,4,8,9,10
+        // Y-flip sign: positions are reflected on Y for Unity scene orientation,
+        // so basis functions with odd Y parity must also be reflected.
         // -------------------------------------------------------------------------
 
-        // -1 where basis function is odd in Y (negate for Y-axis flip), else +1
         static readonly float[] kSHYFlipSign =
         {
             -1f,  // coeff 0 = sh1  (Y_{1,-1} ~ y)

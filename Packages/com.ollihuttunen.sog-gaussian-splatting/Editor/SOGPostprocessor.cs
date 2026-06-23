@@ -104,6 +104,19 @@ namespace GaussianSplatting.SOG.Editor
                 Debug.Log(
                     $"[SOGPostprocessor] Created '{assetPath}' ({rawData.count:N0} splats). " +
                     "Assign this .asset to GaussianSplatRenderer.");
+
+                // A Float32 SH TextAsset can exceed 1 GB. When several SOG files
+                // are reimported in one refresh, keeping each buffer loaded until
+                // the callback ends exhausts editor memory. The serialized asset
+                // references are already saved, so release these objects before
+                // processing the next SOG; Unity reloads them on demand.
+                rawData = null;
+                Resources.UnloadAsset(taPos);
+                Resources.UnloadAsset(taOther);
+                Resources.UnloadAsset(taColor);
+                Resources.UnloadAsset(taSH);
+                Resources.UnloadAsset(asset);
+                GC.Collect();
             }
         }
 

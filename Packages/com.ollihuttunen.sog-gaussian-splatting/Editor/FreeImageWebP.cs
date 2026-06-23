@@ -2,8 +2,8 @@
 // Decodes WebP images (including lossless VP8L) via FreeImage.dll,
 // which Unity ships in its Editor directory.
 //
-// FreeImage pixel layout (32-bit): BGRA byte order, rows bottom-to-top.
-// We swap B↔R to match Unity's Color32 (RGBA) convention.
+// The bundled FreeImage build exposes converted 32-bit scanlines in RGBA byte
+// order, with rows bottom-to-top.
 
 using System;
 using System.Runtime.InteropServices;
@@ -72,15 +72,16 @@ namespace GaussianSplatting.SOG.Editor
                     {
                         FreeImage_Unload(dib);
                         dib = dib32;
-                    }
-
+        }
                     int w = (int)FreeImage_GetWidth(dib);
                     int h = (int)FreeImage_GetHeight(dib);
                     var pixels = new Color32[w * h];
 
                     // FreeImage scanline 0 is the bottom row. SOG data is indexed top-to-bottom,
                     // matching libwebp decode order, so flip vertically while copying.
-                    // FreeImage 32-bit = BGRA in memory; swap B and R to get RGBA.
+                    // The bundled FreeImage 32-bit scanline is RGBA in memory.
+                    // Do not swap R/B here: doing so turns warm SOG colors blue
+                    // and also corrupts the two-byte SH palette labels.
                     for (int y = 0; y < h; y++)
                     {
                         IntPtr row = FreeImage_GetScanLine(dib, y);
@@ -88,9 +89,9 @@ namespace GaussianSplatting.SOG.Editor
                         for (int x = 0; x < w; x++)
                         {
                             int off = x * 4;
-                            byte b = Marshal.ReadByte(row, off);
+                            byte r = Marshal.ReadByte(row, off);
                             byte g = Marshal.ReadByte(row, off + 1);
-                            byte r = Marshal.ReadByte(row, off + 2);
+                            byte b = Marshal.ReadByte(row, off + 2);
                             byte a = Marshal.ReadByte(row, off + 3);
                             pixels[baseIdx + x] = new Color32(r, g, b, a);
                         }
