@@ -670,21 +670,20 @@ namespace GaussianSplatting.Runtime
                 projectionCamera.role == GaussianSplatProjectionCameraRole.Capture)
                 return (Vector4.zero, Vector4.zero);
 
-            float sliderT = Mathf.Clamp01(m_FisheyeStrength);
-            if (sliderT <= 0 || cam.orthographic)
+            float t = Mathf.Clamp01(m_FisheyeStrength);
+            float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 359.9f);
+            if (t <= 0.0f || cam.orthographic)
                 return (Vector4.zero, Vector4.zero);
 
-            // Smoothstep keeps the middle of the control useful while making the
-            // region near zero much less sensitive. Previously a tiny slider move
-            // immediately changed both projection curvature and global sort mode.
-            float t = sliderT * sliderT * (3.0f - 2.0f * sliderT);
-
-            float verticalFov = Mathf.Clamp(m_FisheyeFieldOfView > 0.0f ? m_FisheyeFieldOfView : cam.fieldOfView, 20.0f, 359.9f);
             float halfVerticalFov = verticalFov * Mathf.Deg2Rad * 0.5f;
+            float aspect = Mathf.Max(cam.aspect, 0.0001f);
             float p11 = 1.0f / Mathf.Tan(halfVerticalFov);
-            float p00 = p11 / Mathf.Max(cam.aspect, 0.0001f);
+            float p00 = p11 / aspect;
             float halfFovX = Mathf.Atan2(1.0f, p00);
             float halfFovY = Mathf.Atan2(1.0f, p11);
+
+            // Keep this mapping in lockstep with PlayCanvas FisheyeProjection.update
+            // at engine commit 4b438b6495152845ff526527ad6c64a2515894d3.
             float kMin = verticalFov / 180.0f + 0.15f;
             float kStart = Mathf.Max(1.0f, verticalFov / 180.0f + 0.05f);
             float k = kStart * Mathf.Pow(kMin / kStart, t);
@@ -693,10 +692,9 @@ namespace GaussianSplatting.Runtime
             float maxTheta = Mathf.Min(k * Mathf.PI * 0.5f, 3.13f);
 
             float effHalfFovX = Mathf.Min(halfFovX, maxTheta - 0.01f);
-            float projMat00 = cornerScale / (k * Mathf.Tan(effHalfFovX / k));
-
+            float projMat00 = cornerScale / (k * Mathf.Tan(effHalfFovX * invK));
             float effHalfFovY = Mathf.Min(halfFovY, maxTheta - 0.01f);
-            float projMat11 = cornerScale / (k * Mathf.Tan(effHalfFovY / k));
+            float projMat11 = cornerScale / (k * Mathf.Tan(effHalfFovY * invK));
 
             return (new Vector4(t, k, invK, projMat00), new Vector4(projMat11, maxTheta, 0, 0));
         }
