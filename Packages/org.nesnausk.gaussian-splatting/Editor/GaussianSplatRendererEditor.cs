@@ -25,6 +25,7 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropSplatScale;
         SerializedProperty m_PropOpacityScale;
         SerializedProperty m_PropNearFadeDistance;
+        SerializedProperty m_PropMinPixelSize;
         SerializedProperty m_PropSHOrder;
         SerializedProperty m_PropSHOnly;
         SerializedProperty m_PropSortNthFrame;
@@ -68,6 +69,7 @@ namespace GaussianSplatting.Editor
             m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
             m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
             m_PropNearFadeDistance = serializedObject.FindProperty("m_NearFadeDistance");
+            m_PropMinPixelSize = serializedObject.FindProperty("m_MinPixelSize");
             m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
             m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
             m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
@@ -115,6 +117,7 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropSplatScale);
             EditorGUILayout.PropertyField(m_PropOpacityScale);
             EditorGUILayout.PropertyField(m_PropNearFadeDistance, new GUIContent("Near Fade Distance"));
+            EditorGUILayout.PropertyField(m_PropMinPixelSize, new GUIContent("Minimum Pixel Size"));
             EditorGUILayout.PropertyField(m_PropSHOrder);
             EditorGUILayout.PropertyField(m_PropSHOnly);
             EditorGUILayout.PropertyField(m_PropSortNthFrame);

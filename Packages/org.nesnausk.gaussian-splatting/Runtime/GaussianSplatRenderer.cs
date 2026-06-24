@@ -109,7 +109,8 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb,
+            Camera.StereoscopicEye? stereoEye = null, bool updateSortAndFrame = true)
         {
             Material matComposite = null;
             foreach (var kvp in m_ActiveSplats)
@@ -121,9 +122,10 @@ namespace GaussianSplatting.Runtime
 
                 // sort
                 var matrix = gs.transform.localToWorldMatrix;
-                if (gs.m_FrameCounter % gs.m_SortNthFrame == 0)
+                if (updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0)
                     gs.SortPoints(cmb, cam, matrix);
-                ++gs.m_FrameCounter;
+                if (updateSortAndFrame)
+                    ++gs.m_FrameCounter;
 
                 // cache view
                 kvp.Item2.Clear();
@@ -154,7 +156,7 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
-                gs.CalcViewData(cmb, cam);
+                gs.CalcViewData(cmb, cam, stereoEye);
                 cmb.EndSample(s_ProfCalcView);
 
                 // draw
@@ -239,6 +241,8 @@ namespace GaussianSplatting.Runtime
         [Range(0.0f, 2.0f)]
         [Tooltip("Fades and shrinks splats close to the camera. Use small values in VR to reduce near-eye floaters.")]
         public float m_NearFadeDistance;
+        [Min(0.0f)] [Tooltip("Cull splats whose projected diameter is smaller than this many pixels. Zero preserves every splat.")]
+        public float m_MinPixelSize;
         [Range(0, 3)] [Tooltip("Spherical Harmonics order to use")]
         public int m_SHOrder = 3;
         [Tooltip("Show only Spherical Harmonics contribution, using gray color")]
@@ -315,6 +319,7 @@ namespace GaussianSplatting.Runtime
             public static readonly int SplatScale = Shader.PropertyToID("_SplatScale");
             public static readonly int SplatOpacityScale = Shader.PropertyToID("_SplatOpacityScale");
             public static readonly int NearFadeDistance = Shader.PropertyToID("_NearFadeDistance");
+            public static readonly int MinPixelSize = Shader.PropertyToID("_MinPixelSize");
             public static readonly int SplatSize = Shader.PropertyToID("_SplatSize");
             public static readonly int SplatCount = Shader.PropertyToID("_SplatCount");
             public static readonly int SHOrder = Shader.PropertyToID("_SHOrder");
@@ -328,6 +333,9 @@ namespace GaussianSplatting.Runtime
             public static readonly int DstBuffer = Shader.PropertyToID("_DstBuffer");
             public static readonly int BufferSize = Shader.PropertyToID("_BufferSize");
             public static readonly int MatrixMV = Shader.PropertyToID("_MatrixMV");
+            public static readonly int MatrixVP = Shader.PropertyToID("_MatrixVP");
+            public static readonly int MatrixP = Shader.PropertyToID("_MatrixP");
+            public static readonly int UseExplicitCameraMatrices = Shader.PropertyToID("_UseExplicitCameraMatrices");
             public static readonly int MatrixObjectToWorld = Shader.PropertyToID("_MatrixObjectToWorld");
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
@@ -591,27 +599,34 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatDebugBoxes);
         }
 
-        internal void CalcViewData(CommandBuffer cmb, Camera cam)
+        internal void CalcViewData(CommandBuffer cmb, Camera cam, Camera.StereoscopicEye? stereoEye = null)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
 
             var tr = transform;
 
-            Matrix4x4 matView = cam.worldToCameraMatrix;
+            bool explicitEye = stereoEye.HasValue;
+            Matrix4x4 matView = explicitEye ? cam.GetStereoViewMatrix(stereoEye.Value) : cam.worldToCameraMatrix;
+            Matrix4x4 projection = explicitEye ? cam.GetStereoProjectionMatrix(stereoEye.Value) : cam.projectionMatrix;
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
             int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
-            bool useEyeTexture = cam.stereoEnabled && eyeW != 0 && eyeH != 0;
+            bool useEyeTexture = explicitEye && eyeW != 0 && eyeH != 0;
             Vector4 screenPar = new Vector4(useEyeTexture ? eyeW : screenW, useEyeTexture ? eyeH : screenH, 0, 0);
-            Vector4 camPos = cam.transform.position;
-            var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam);
+            Vector4 camPos = explicitEye ? matView.inverse.GetColumn(3) : cam.transform.position;
+            var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam,
+                screenPar.x / Mathf.Max(screenPar.y, 1.0f));
+            Matrix4x4 gpuProjection = GL.GetGPUProjectionMatrix(projection, true);
 
             // calculate view dependent data for each splat
             SetAssetDataOnCS(cmb, KernelIndices.CalcViewData);
 
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixVP, gpuProjection * matView);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixP, gpuProjection);
+            cmb.SetComputeIntParam(m_CSSplatUtilities, Props.UseExplicitCameraMatrices, explicitEye ? 1 : 0);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, matO2W);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, matW2O);
 
@@ -622,6 +637,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatScale, m_SplatScale);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatOpacityScale, m_OpacityScale);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.NearFadeDistance, m_NearFadeDistance);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.MinPixelSize, m_MinPixelSize);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
 
@@ -663,7 +679,7 @@ namespace GaussianSplatting.Runtime
 
         public (Vector4, Vector4) GetFisheyeShaderParams(Camera cam) => CalcFisheyeParams(cam);
 
-        (Vector4, Vector4) CalcFisheyeParams(Camera cam)
+        (Vector4, Vector4) CalcFisheyeParams(Camera cam, float aspectOverride = 0.0f)
         {
             if (cam.TryGetComponent<GaussianSplatProjectionCamera>(out var projectionCamera) &&
                 projectionCamera.isActiveAndEnabled &&
@@ -676,7 +692,7 @@ namespace GaussianSplatting.Runtime
                 return (Vector4.zero, Vector4.zero);
 
             float halfVerticalFov = verticalFov * Mathf.Deg2Rad * 0.5f;
-            float aspect = Mathf.Max(cam.aspect, 0.0001f);
+            float aspect = aspectOverride > 0.0f ? aspectOverride : Mathf.Max(cam.aspect, 0.0001f);
             float p11 = 1.0f / Mathf.Tan(halfVerticalFov);
             float p00 = p11 / aspect;
             float halfFovX = Mathf.Atan2(1.0f, p00);

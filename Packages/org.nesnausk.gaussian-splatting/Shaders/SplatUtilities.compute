@@ -40,6 +40,9 @@
 float4x4 _MatrixObjectToWorld;
 float4x4 _MatrixWorldToObject;
 float4x4 _MatrixMV;
+float4x4 _MatrixVP;
+float4x4 _MatrixP;
+int _UseExplicitCameraMatrices;
 float4 _VecScreenParams;
 float4 _VecWorldSpaceCameraPos;
 float4 _FisheyeParams; // x=strength, y=k, z=1/k, w=projection scale x
@@ -92,6 +95,7 @@ RWStructuredBuffer<SplatViewData> _SplatViewData;
 float _SplatScale;
 float _SplatOpacityScale;
 float _NearFadeDistance;
+float _MinPixelSize;
 uint _SHOrder;
 uint _SHOnly;
 
@@ -210,7 +214,9 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
     SplatViewData view = (SplatViewData)0;
     
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
-    float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
+    float4 centerClipPos = _UseExplicitCameraMatrices != 0
+        ? mul(_MatrixVP, float4(centerWorldPos, 1))
+        : mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     float3 centerViewPos = mul(_MatrixMV, float4(splat.pos, 1)).xyz;
     half opacityScale = _SplatOpacityScale;
     float splatScale = _SplatScale;
@@ -290,19 +296,29 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         float splatScale2 = splatScale * splatScale;
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
-        float3 cov2d = _FisheyeParams.x > 0.0001
-            ? CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV, _VecScreenParams, _FisheyeParams, _FisheyeParams2)
-            : CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
+        float4x4 covarianceProjection = _MatrixP;
+        if (_UseExplicitCameraMatrices == 0)
+            covarianceProjection = UNITY_MATRIX_P;
+        float aaFactor = 1.0;
+        float3 cov2d;
+        if (_FisheyeParams.x > 0.0001)
+            cov2d = CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV,
+                _VecScreenParams, _FisheyeParams, _FisheyeParams2, aaFactor);
+        else
+            cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV,
+                covarianceProjection, _VecScreenParams, aaFactor);
 
-        float finalOpacity = min(splat.opacity * opacityScale, 65000);
+        float finalOpacity = min(splat.opacity * opacityScale * aaFactor, 65000);
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
         // Exact PlayCanvas gsplatCorner frustum test, adjusted for this renderer's
         // half-sized focal convention and quad expansion (l = 4 * stored axis).
         float lMax = 4.0 * max(length(view.axis1), length(view.axis2));
         float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;
-        if (_FisheyeParams.x > 0.0001 &&
-            any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww))
+        bool belowMinimumSize = lMax < _MinPixelSize;
+        bool outsideFisheyeView = _FisheyeParams.x > 0.0001 &&
+            any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww);
+        if (belowMinimumSize || outsideFisheyeView)
         {
             centerClipPos.w = 0;
             view.pos = centerClipPos;

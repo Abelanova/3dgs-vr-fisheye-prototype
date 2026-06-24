@@ -53,7 +53,8 @@ void CalcCovariance3D(float3x3 rotMat, out float3 sigma0, out float3 sigma1)
 }
 
 // from "EWA Splatting" (Zwicker et al 2002) eq. 31
-float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV, float4x4 matrixP, float4 screenParams)
+float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,
+    float4x4 matrixP, float4 screenParams, out float aaFactor)
 {
     float4x4 viewMatrix = matrixV;
     float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
@@ -83,13 +84,17 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     );
     float3x3 cov = mul(T, mul(V, transpose(T)));
 
+    float detOrig = cov._m00 * cov._m11 - cov._m01 * cov._m01;
     // Low pass filter to make each splat at least 1px size.
     cov._m00 += 0.3;
     cov._m11 += 0.3;
+    float detBlur = cov._m00 * cov._m11 - cov._m01 * cov._m01;
+    aaFactor = sqrt(max(detOrig / max(detBlur, 1e-12), 0.0));
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
-float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV, float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2)
+float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,
+    float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)
 {
     float4x4 viewMatrix = matrixV;
     float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
@@ -103,7 +108,10 @@ float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, fl
     float theta = atan2(rxy, negZ);
     float maxTheta = fisheyeParams2.y;
     if (theta > maxTheta - 0.01 || dot(viewPos, viewPos) < 0.0001)
+    {
+        aaFactor = 0;
         return 0;
+    }
 
     float tk = theta * invK;
     float sinTk, cosTk;
@@ -138,8 +146,11 @@ float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, fl
     );
     float3x3 cov = mul(T, mul(V, transpose(T)));
 
+    float detOrig = cov._m00 * cov._m11 - cov._m01 * cov._m01;
     cov._m00 += 0.3;
     cov._m11 += 0.3;
+    float detBlur = cov._m00 * cov._m11 - cov._m01 * cov._m01;
+    aaFactor = sqrt(max(detOrig / max(detBlur, 1e-12), 0.0));
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
