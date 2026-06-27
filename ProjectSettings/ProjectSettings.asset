@@ -291,8 +291,8 @@ PlayerSettings:
   androidGamepadSupportLevel: 0
   AndroidMinifyRelease: 0
   AndroidMinifyDebug: 0
-  AndroidValidateAppBundleSize: 1
-  AndroidAppBundleSizeToValidate: 150
+  AndroidValidateAppBundleSize: 0
+  AndroidAppBundleSizeToValidate: 2048
   AndroidReportGooglePlayAppDependencies: 1
   androidSymbolsSizeThreshold: 800
   m_BuildTargetIcons: []

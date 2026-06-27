@@ -83,10 +83,11 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     float3 pos = LoadSplatPos(origIdx);
     pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
 
-    // A panoramic/fisheye image can see beside and behind the camera, where axial
-    // Z is no longer a meaningful global transparency order. Radial distance is
-    // stable for every projection strength and for both XR eyes.
-    float sortDistance = length(pos);
+    // Match PlayCanvas' default behavior: linear sorting is better for camera
+    // translation. Only switch to radial sorting once the fisheye cone extends
+    // beyond the forward hemisphere, where a single axial depth is ambiguous.
+    bool useRadialSort = _FisheyeParams.x > 0.0001 && _FisheyeParams2.y > 1.5807963;
+    float sortDistance = useRadialSort ? length(pos) : pos.z;
     _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);
 }
 
@@ -311,14 +312,15 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         float finalOpacity = min(splat.opacity * opacityScale * aaFactor, 65000);
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
-        // Exact PlayCanvas gsplatCorner frustum test, adjusted for this renderer's
-        // half-sized focal convention and quad expansion (l = 4 * stored axis).
+        // Match PlayCanvas' footprint-aware x/y frustum test for ordinary
+        // perspective. Fisheye stays unculled here because the footprint warp is
+        // non-linear and can remove visible splats while moving.
         float lMax = 4.0 * max(length(view.axis1), length(view.axis2));
-        float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;
         bool belowMinimumSize = lMax < _MinPixelSize;
-        bool outsideFisheyeView = _FisheyeParams.x > 0.0001 &&
+        float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;
+        bool outsidePerspectiveView = _FisheyeParams.x <= 0.0001 &&
             any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww);
-        if (belowMinimumSize || outsideFisheyeView)
+        if (belowMinimumSize || outsidePerspectiveView)
         {
             centerClipPos.w = 0;
             view.pos = centerClipPos;

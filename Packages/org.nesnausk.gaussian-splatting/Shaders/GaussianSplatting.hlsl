@@ -60,9 +60,8 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
 
     // this is needed in order for splats that are visible in view but clipped "quite a lot" to work
-    float aspect = matrixP._m00 / matrixP._m11;
-    float tanFovX = rcp(matrixP._m00);
-    float tanFovY = rcp(matrixP._m11 * aspect);
+    float tanFovX = rcp(abs(matrixP._m00));
+    float tanFovY = rcp(abs(matrixP._m11));
     float limX = 1.3 * tanFovX;
     float limY = 1.3 * tanFovY;
     viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;

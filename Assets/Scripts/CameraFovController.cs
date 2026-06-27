@@ -68,9 +68,7 @@ public sealed class CameraFovController : MonoBehaviour
 #endif
         }
 
-        ResolveSplatTarget();
-        if (targetSplat != null)
-            targetSplat.m_FisheyeFieldOfView = verticalFov;
+        ApplyToActiveSplats(verticalFov);
     }
 
 #if UNITY_EDITOR
@@ -116,6 +114,19 @@ public sealed class CameraFovController : MonoBehaviour
             {
                 targetSplat = renderer;
                 return;
+            }
+        }
+    }
+
+    void ApplyToActiveSplats(float fov)
+    {
+        var renderers = Object.FindObjectsByType<GaussianSplatRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var renderer in renderers)
+        {
+            if (renderer.isActiveAndEnabled && renderer.m_Asset != null)
+            {
+                renderer.m_FisheyeFieldOfView = fov;
+                targetSplat = renderer;
             }
         }
     }

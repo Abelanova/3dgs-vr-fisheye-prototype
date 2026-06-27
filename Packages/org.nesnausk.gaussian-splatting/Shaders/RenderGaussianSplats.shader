@@ -52,11 +52,19 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		uint idx = vtxID;
 		float2 quadPos = float2(idx&1, (idx>>1)&1) * 2.0 - 1.0;
-		quadPos *= 2;
 
-		o.pos = quadPos;
+		const float alphaClipForward = 1.0 / 255.0;
+		float opacity = max(o.col.a, 0.0);
+		if (opacity <= alphaClipForward)
+		{
+			o.vertex = asfloat(0x7fc00000);
+			return o;
+		}
 
-		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _ScreenParams.xy;
+		float clipScale = min(1.0, sqrt(max(0.0, log(opacity / alphaClipForward))) * 0.5);
+		o.pos = quadPos * clipScale;
+
+		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * (4.0 * clipScale / _ScreenParams.xy);
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;
 
@@ -78,8 +86,13 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 half4 frag (v2f i) : SV_Target
 {
-	float power = -dot(i.pos, i.pos);
-	half alpha = exp(power);
+	float A = dot(i.pos, i.pos);
+	if (A > 1.0)
+		discard;
+
+	const float exp4 = 0.01831563888873418;
+	const float invExp4 = 1.0 / (1.0 - exp4);
+	half alpha = (exp(-4.0 * A) - exp4) * invExp4;
 	if (i.col.a >= 0)
 	{
 		alpha = saturate(alpha * i.col.a);

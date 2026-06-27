@@ -59,8 +59,7 @@ public sealed class ProjectionControlPanel : MonoBehaviour
     void SetFisheye(float value)
     {
         ResolveSplatTarget();
-        if (splat != null)
-            splat.m_FisheyeStrength = Mathf.Clamp01(value);
+        ApplyFisheyeToActiveSplats(Mathf.Clamp01(value));
 
         RefreshLabels();
     }
@@ -87,6 +86,19 @@ public sealed class ProjectionControlPanel : MonoBehaviour
             {
                 splat = renderer;
                 return;
+            }
+        }
+    }
+
+    void ApplyFisheyeToActiveSplats(float value)
+    {
+        var renderers = Object.FindObjectsByType<GaussianSplatRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var renderer in renderers)
+        {
+            if (renderer.isActiveAndEnabled && renderer.m_Asset != null)
+            {
+                renderer.m_FisheyeStrength = value;
+                splat = renderer;
             }
         }
     }

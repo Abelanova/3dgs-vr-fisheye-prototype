@@ -20,6 +20,12 @@ using UnityEngine;
 
 namespace GaussianSplatting.SOG
 {
+    public enum SOGCoordinateMode
+    {
+        PlayCanvas = 0,
+        ReflectedYForUnity = 1,
+    }
+
     // -------------------------------------------------------------------------
     // meta.json model
     // -------------------------------------------------------------------------
@@ -97,6 +103,7 @@ namespace GaussianSplatting.SOG
     public class SOGRawData
     {
         public int count;
+        public SOGCoordinateMode coordinateMode;
         public Vector3[] positions;
         public Quaternion[] rotations;
         /// <summary>Log-scale per splat (exp() applied in SOGConverter).</summary>

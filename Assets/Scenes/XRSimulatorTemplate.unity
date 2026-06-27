@@ -2312,16 +2312,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c12d929a7f62c48adbe9ff45c9a33ff0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Asset: {fileID: 11400000, guid: 02d12d3dec7064649af56d3d9572f118, type: 2}
+  m_Asset: {fileID: 11400000, guid: c34ac87b7eaab1249a5784b54ec6003e, type: 2}
   m_RenderOrder: 0
   m_SplatScale: 1
   m_OpacityScale: 1
   m_NearFadeDistance: 0
+  m_MinPixelSize: 0.75
   m_SHOrder: 0
   m_SHOnly: 0
-  m_SortNthFrame: 1
-  m_FisheyeFieldOfView: 60
-  m_FisheyeStrength: 0
+  m_SortNthFrame: 6
+  m_FisheyeFieldOfView: 120
+  m_FisheyeStrength: 0.45
   m_RenderMode: 0
   m_PointDisplaySize: 3
   m_Cutouts: []
@@ -3556,6 +3557,7 @@ GameObject:
   - component: {fileID: 2120157585}
   - component: {fileID: 2120157590}
   - component: {fileID: 2120157591}
+  - component: {fileID: 2120157592}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -3594,8 +3596,8 @@ MonoBehaviour:
   splat: {fileID: 0}
   fovStepPerSecond: 35
   fisheyeStepPerSecond: 0.35
-  defaultFov: 60
-  defaultFisheye: 0
+  defaultFov: 120
+  defaultFisheye: 0.45
 --- !u!114 &2120157586
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3610,9 +3612,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   targetCamera: {fileID: 2120157587}
   targetSplat: {fileID: 1693949349}
-  verticalFov: 60
+  verticalFov: 120
   cameraFovLimit: 140
-  squareEditorGameView: 1
+  squareEditorGameView: 0
 --- !u!20 &2120157587
 Camera:
   m_ObjectHideFlags: 0
@@ -3646,7 +3648,7 @@ Camera:
     height: 1
   near clip plane: 0.03
   far clip plane: 500
-  field of view: 60
+  field of view: 120
   orthographic: 0
   orthographic size: 5
   m_Depth: 0
@@ -3779,23 +3781,6 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
---- !u!114 &2120157591
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2120157583}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 80e129e3a4c74c6c80d24d44d4fe9ea6, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  targetSplat: {fileID: 1693949349}
-  faceResolution: 512
-  facePairsPerFrame: 1
-  positionRefreshDistance: 0.02
-  highQualityEnabled: 1
   m_VolumeFrameworkUpdateModeOption: 2
   m_RenderPostProcessing: 0
   m_Antialiasing: 0
@@ -3818,6 +3803,46 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &2120157591
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2120157583}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80e129e3a4c74c6c80d24d44d4fe9ea6, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  targetSplat: {fileID: 1693949349}
+  faceResolution: 512
+  facePairsPerFrame: 1
+  positionRefreshDistance: 0.02
+  highQualityEnabled: 1
+--- !u!114 &2120157592
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2120157583}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3a5f4564dd64c8f9b7b6d38b22b76d2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fovController: {fileID: 2120157586}
+  splat: {fileID: 1693949349}
+  rigRoot: {fileID: 1535188903}
+  xrCamera: {fileID: 2120157587}
+  moveSpeed: 0.8
+  deadZone: 0.18
+  fovStepPerSecond: 35
+  fisheyeStepPerSecond: 0.35
+  defaultFov: 120
+  defaultFisheye: 0.45
+  applyDefaultsOnStart: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

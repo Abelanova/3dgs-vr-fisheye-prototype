@@ -184,28 +184,9 @@ namespace GaussianSplatting.SOG
         //   sh1..shF = higher-order SH coefficients (3 floats each)
         //   shPadding = 3 floats for 16-byte alignment
         //
-        // Y-flip sign: positions are reflected on Y for Unity scene orientation,
-        // so basis functions with odd Y parity must also be reflected.
+        // SOG is decoded in PlayCanvas model coordinates, so SH coefficients are
+        // copied without an additional basis reflection.
         // -------------------------------------------------------------------------
-
-        static readonly float[] kSHYFlipSign =
-        {
-            -1f,  // coeff 0 = sh1  (Y_{1,-1} ~ y)
-             1f,  // coeff 1 = sh2  (Y_{1,0}  ~ z)
-             1f,  // coeff 2 = sh3  (Y_{1,+1} ~ x)
-            -1f,  // coeff 3 = sh4  (Y_{2,-2} ~ xy)
-            -1f,  // coeff 4 = sh5  (Y_{2,-1} ~ yz)
-             1f,  // coeff 5 = sh6  (Y_{2,0})
-             1f,  // coeff 6 = sh7  (Y_{2,+1} ~ xz)
-             1f,  // coeff 7 = sh8  (Y_{2,+2})
-            -1f,  // coeff 8 = sh9  (Y_{3,-3} ~ y(3x²-y²))
-            -1f,  // coeff 9 = sh10 (Y_{3,-2} ~ xyz)
-            -1f,  // coeff10 = sh11 (Y_{3,-1} ~ y(4z²-x²-y²))
-             1f,  // coeff11 = sh12 (Y_{3,0})
-             1f,  // coeff12 = sh13 (Y_{3,+1})
-             1f,  // coeff13 = sh14 (Y_{3,+2})
-             1f,  // coeff14 = sh15 (Y_{3,+3})
-        };
 
         static byte[] BuildSHData(SOGRawData data)
         {
@@ -231,10 +212,9 @@ namespace GaussianSplatting.SOG
                             b = data.shHigher[i][baseIdx + 2];
                         }
                     }
-                    float sign = kSHYFlipSign[coeff];
-                    WriteFloat(buf, off, r * sign); off += 4;
-                    WriteFloat(buf, off, g * sign); off += 4;
-                    WriteFloat(buf, off, b * sign); off += 4;
+                    WriteFloat(buf, off, r); off += 4;
+                    WriteFloat(buf, off, g); off += 4;
+                    WriteFloat(buf, off, b); off += 4;
                 }
                 // padding (float3)
                 WriteFloat(buf, off, 0f); off += 4;
