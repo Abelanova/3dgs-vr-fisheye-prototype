@@ -93,8 +93,6 @@ RWStructuredBuffer<SplatViewData> _SplatViewData;
 float _SplatScale;
 float _SplatOpacityScale;
 float _NearFadeDistance;
-uint _SHOrder;
-uint _SHOnly;
 
 uint _SplatCutoutsCount;
 

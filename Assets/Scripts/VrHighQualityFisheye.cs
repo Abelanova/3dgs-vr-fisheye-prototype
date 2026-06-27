@@ -1,7 +1,6 @@
 using GaussianSplatting.Runtime;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.UI;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Camera))]
@@ -11,7 +10,10 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
     [SerializeField, Range(256, 1024)] int faceResolution = 512;
     [SerializeField, Range(1, 3)] int facePairsPerFrame = 1;
     [SerializeField, Min(0.005f)] float positionRefreshDistance = 0.02f;
-    [SerializeField] bool highQualityEnabled = true;
+    [SerializeField] bool highQualityEnabled;
+    [SerializeField] bool monoComposite = true;
+    [SerializeField] bool swapEyes;
+    [SerializeField, Range(0.0f, 1.0f)] float stereoSeparationScale = 1.0f;
 
     const int FacesPerEye = 6;
     const int EyeCount = 2;
@@ -36,8 +38,6 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
     GaussianSplatProjectionCamera outputMarker;
     Camera[] faceCameras;
     RenderTexture[] faceTextureBuffers;
-    Canvas outputCanvas;
-    RawImage outputImage;
     Material outputMaterial;
     int allocatedResolution;
     int activeBuffer;
@@ -47,6 +47,8 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
     bool hasValidCapture;
     bool updateCycleActive;
     bool swapPending;
+    bool outputCameraIsIsolated;
+    int originalOutputCullingMask;
     Vector3 activeLeftPosition;
     Vector3 activeRightPosition;
     Vector3 pendingLeftPosition;
@@ -54,7 +56,7 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
 
     bool WantsHighQuality =>
         highQualityEnabled && targetSplat != null && targetSplat.isActiveAndEnabled &&
-        targetSplat.asset != null;
+        targetSplat.asset != null && targetSplat.m_FisheyeStrength > 0.0001f;
 
     void Awake() => outputCamera = GetComponent<Camera>();
 
@@ -75,21 +77,32 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
 
         ResolveTarget();
         EnsureResources();
+#if ENABLE_LEGACY_INPUT_MANAGER
+        UpdateDiagnosticShortcuts();
+#endif
         bool active = WantsHighQuality && outputMaterial != null;
-
-        if (outputMarker != null)
-            outputMarker.enabled = active;
-        if (outputCanvas != null)
-            outputCanvas.gameObject.SetActive(active);
 
         DisableCaptureCameras();
 
+        if (active)
+        {
+            UpdateProjectionMaterial();
+            UpdateCompositeEyeRotations();
+            ScheduleCaptureWork();
+        }
+
+        bool compositeReady = active && hasValidCapture;
+        SetOutputCameraIsolation(compositeReady);
+
+        if (outputMarker != null)
+        {
+            outputMarker.enabled = compositeReady;
+            outputMarker.compositeActive = compositeReady;
+            outputMarker.compositeMaterial = compositeReady ? outputMaterial : null;
+        }
+
         if (!active)
             return;
-
-        UpdateProjectionMaterial();
-        UpdateCompositeEyeRotations();
-        ScheduleCaptureWork();
     }
 
     void UpdateCompositeEyeRotations()
@@ -107,6 +120,17 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
     {
         GetEyePose(Camera.StereoscopicEye.Left, out Vector3 leftPosition, out _);
         GetEyePose(Camera.StereoscopicEye.Right, out Vector3 rightPosition, out _);
+        if (UseMonoComposite)
+        {
+            leftPosition = outputCamera.transform.position;
+            rightPosition = leftPosition;
+        }
+        else if (stereoSeparationScale < 0.999f)
+        {
+            Vector3 centerPosition = outputCamera.transform.position;
+            leftPosition = Vector3.Lerp(centerPosition, leftPosition, stereoSeparationScale);
+            rightPosition = Vector3.Lerp(centerPosition, rightPosition, stereoSeparationScale);
+        }
 
         if (!hasValidCapture)
         {
@@ -162,7 +186,8 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
         for (int i = 0; i < pairCount && nextFacePair < FacesPerEye; ++i)
         {
             ScheduleFace(0, nextFacePair, stagingBuffer, pendingLeftPosition);
-            ScheduleFace(1, nextFacePair, stagingBuffer, pendingRightPosition);
+            if (!UseMonoComposite)
+                ScheduleFace(1, nextFacePair, stagingBuffer, pendingRightPosition);
             ++nextFacePair;
         }
 
@@ -177,12 +202,42 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
         }
     }
 
+    void SetOutputCameraIsolation(bool isolate)
+    {
+        if (outputCamera == null)
+            return;
+
+        if (!isolate)
+        {
+            RestoreOutputCameraIsolation();
+            return;
+        }
+
+        if (!outputCameraIsIsolated)
+        {
+            originalOutputCullingMask = outputCamera.cullingMask;
+            outputCameraIsIsolated = true;
+        }
+
+        outputCamera.cullingMask = 0;
+    }
+
+    void RestoreOutputCameraIsolation()
+    {
+        if (outputCamera == null || !outputCameraIsIsolated)
+            return;
+
+        outputCamera.cullingMask = originalOutputCullingMask;
+        outputCameraIsIsolated = false;
+    }
+
     void ScheduleAllFaces(int buffer, Vector3 leftPosition, Vector3 rightPosition)
     {
         for (int face = 0; face < FacesPerEye; ++face)
         {
             ScheduleFace(0, face, buffer, leftPosition);
-            ScheduleFace(1, face, buffer, rightPosition);
+            if (!UseMonoComposite)
+                ScheduleFace(1, face, buffer, rightPosition);
         }
     }
 
@@ -216,8 +271,6 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
             return;
         for (int i = 0; i < EyeCount * FacesPerEye; ++i)
             outputMaterial.SetTexture(FaceTextureNames[i], FaceTexture(activeBuffer, i));
-        if (outputImage != null)
-            outputImage.texture = FaceTexture(activeBuffer, 4);
     }
 
     void CopyActiveToInactiveBuffer()
@@ -247,15 +300,75 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
     {
         var (fisheyeParams, fisheyeParams2) = targetSplat.GetFisheyeShaderParams(outputCamera);
         bool fisheyeEnabled = fisheyeParams.x > 0.0001f;
-        float perspectiveP11 = 1.0f / Mathf.Tan(outputCamera.fieldOfView * Mathf.Deg2Rad * 0.5f);
-        float perspectiveP00 = perspectiveP11 / Mathf.Max(outputCamera.aspect, 0.0001f);
+        Matrix4x4 leftProjectionMatrix = GetProjectionMatrix(Camera.StereoscopicEye.Left);
+        Matrix4x4 rightProjectionMatrix = GetProjectionMatrix(Camera.StereoscopicEye.Right);
+        Vector4 leftProjection = ProjectionParams(leftProjectionMatrix);
+        Vector4 rightProjection = ProjectionParams(rightProjectionMatrix);
 
         outputMaterial.SetFloat("_FishEnabled", fisheyeEnabled ? 1.0f : 0.0f);
-        outputMaterial.SetVector("_PerspectiveScale",
-            new Vector4(perspectiveP00, perspectiveP11, 0, 0));
+        outputMaterial.SetFloat("_MonoComposite", UseMonoComposite ? 1.0f : 0.0f);
+        outputMaterial.SetFloat("_SwapEyes", swapEyes ? 1.0f : 0.0f);
+        outputMaterial.SetVector("_LeftProjection", leftProjection);
+        outputMaterial.SetVector("_RightProjection", rightProjection);
+        outputMaterial.SetMatrix("_LeftInvProjection", leftProjectionMatrix.inverse);
+        outputMaterial.SetMatrix("_RightInvProjection", rightProjectionMatrix.inverse);
         outputMaterial.SetVector("_FishParams", new Vector4(
             fisheyeParams.y, fisheyeParams.z, fisheyeParams.w, fisheyeParams2.x));
         outputMaterial.SetFloat("_MaxTheta", fisheyeParams2.y);
+    }
+
+    Matrix4x4 GetProjectionMatrix(Camera.StereoscopicEye eye)
+    {
+        return outputCamera.stereoEnabled
+            ? outputCamera.GetStereoProjectionMatrix(eye)
+            : outputCamera.projectionMatrix;
+    }
+
+    static Vector4 ProjectionParams(Matrix4x4 projection)
+    {
+        return new Vector4(projection.m00, projection.m11, projection.m02, projection.m12);
+    }
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+    void UpdateDiagnosticShortcuts()
+    {
+        if (Input.GetKeyDown(KeyCode.M))
+        {
+            monoComposite = !monoComposite;
+            InvalidateCapture();
+            Debug.Log($"VR fisheye mono composite: {monoComposite}");
+        }
+
+        if (Input.GetKeyDown(KeyCode.X))
+        {
+            swapEyes = !swapEyes;
+            Debug.Log($"VR fisheye swap eyes: {swapEyes}");
+        }
+
+        if (Input.GetKeyDown(KeyCode.Comma))
+        {
+            stereoSeparationScale = Mathf.Max(0.0f, stereoSeparationScale - 0.25f);
+            InvalidateCapture();
+            Debug.Log($"VR fisheye stereo separation: {stereoSeparationScale:0.00}");
+        }
+
+        if (Input.GetKeyDown(KeyCode.Period))
+        {
+            stereoSeparationScale = Mathf.Min(1.0f, stereoSeparationScale + 0.25f);
+            InvalidateCapture();
+            Debug.Log($"VR fisheye stereo separation: {stereoSeparationScale:0.00}");
+        }
+    }
+#endif
+
+    void InvalidateCapture()
+    {
+        hasValidCapture = false;
+        updateCycleActive = false;
+        swapPending = false;
+        swapReadyFrame = -1;
+        initialCaptureFrame = -1;
+        nextFacePair = 0;
     }
 
     void ResolveTarget()
@@ -337,6 +450,7 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
                 capture.cullingMask = 0;
                 capture.allowMSAA = false;
                 capture.allowHDR = false;
+                capture.stereoTargetEye = StereoTargetEyeMask.None;
                 cameraObject.AddComponent<GaussianSplatProjectionCamera>().role =
                     GaussianSplatProjectionCameraRole.Capture;
                 UniversalAdditionalCameraData cameraData =
@@ -359,28 +473,6 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
             BindActiveTextures();
         }
 
-        var canvasObject = new GameObject("VR HQ Fisheye Output")
-        {
-            hideFlags = HideFlags.HideAndDontSave
-        };
-        outputCanvas = canvasObject.AddComponent<Canvas>();
-        outputCanvas.renderMode = RenderMode.ScreenSpaceCamera;
-        outputCanvas.worldCamera = outputCamera;
-        outputCanvas.planeDistance = Mathf.Max(outputCamera.nearClipPlane + 0.01f, 0.05f);
-        outputCanvas.sortingOrder = -1000;
-
-        var imageObject = new GameObject("Image") { hideFlags = HideFlags.HideAndDontSave };
-        imageObject.transform.SetParent(canvasObject.transform, false);
-        outputImage = imageObject.AddComponent<RawImage>();
-        outputImage.raycastTarget = false;
-        outputImage.material = outputMaterial;
-        outputImage.texture = FaceTexture(activeBuffer, 4);
-        RectTransform rect = outputImage.rectTransform;
-        rect.anchorMin = Vector2.zero;
-        rect.anchorMax = Vector2.one;
-        rect.offsetMin = Vector2.zero;
-        rect.offsetMax = Vector2.zero;
-
         hasValidCapture = false;
         updateCycleActive = false;
         swapPending = false;
@@ -388,6 +480,8 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
         initialCaptureFrame = -1;
         nextFacePair = 0;
     }
+
+    bool UseMonoComposite => monoComposite || outputCamera == null || !outputCamera.stereoEnabled;
 
     void OnDisable()
     {
@@ -403,6 +497,14 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
 
     void ReleaseResources(bool disableOutputMarker)
     {
+        RestoreOutputCameraIsolation();
+
+        if (outputMarker != null)
+        {
+            outputMarker.compositeActive = false;
+            outputMarker.compositeMaterial = null;
+        }
+
         if (disableOutputMarker && outputMarker != null)
             outputMarker.enabled = false;
 
@@ -424,15 +526,11 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
             }
         }
 
-        if (outputCanvas != null)
-            Destroy(outputCanvas.gameObject);
         if (outputMaterial != null)
             Destroy(outputMaterial);
 
         faceCameras = null;
         faceTextureBuffers = null;
-        outputCanvas = null;
-        outputImage = null;
         outputMaterial = null;
         allocatedResolution = 0;
         activeBuffer = 0;

@@ -245,6 +245,8 @@ namespace GaussianSplatting.Runtime
         public bool m_SHOnly;
         [Range(1,30)] [Tooltip("Sort splats only every N frames")]
         public int m_SortNthFrame = 1;
+        [Min(0)] [Tooltip("Optional runtime splat count cap. 0 renders the whole asset; use a cap on mobile VR to keep sorting and drawing responsive.")]
+        public int m_MaxRenderedSplats;
         [Range(20.0f, 360.0f)] [Tooltip("Virtual vertical field of view used by fisheye projection. Values above Unity's camera FOV range enable tiny-planet style views.")]
         public float m_FisheyeFieldOfView = 60.0f;
         [Range(0, 1)] [Tooltip("Fisheye projection strength. 0 uses the normal camera projection.")]
@@ -294,6 +296,9 @@ namespace GaussianSplatting.Runtime
         internal int m_FrameCounter;
         GaussianSplatAsset m_PrevAsset;
         Hash128 m_PrevHash;
+        int m_PrevSHOrder = -1;
+        bool m_PrevSHOnly;
+        int m_PrevMaxRenderedSplats = -1;
         bool m_Registered;
 
         static readonly ProfilerMarker s_ProfSort = new(ProfilerCategory.Render, "GaussianSplat.Sort", MarkerFlags.SampleGPU);
@@ -379,24 +384,45 @@ namespace GaussianSplatting.Runtime
             m_Asset.formatVersion == GaussianSplatAsset.kCurrentVersion &&
             m_Asset.posData != null &&
             m_Asset.otherData != null &&
-            m_Asset.shData != null &&
+            (!NeedsSHData || m_Asset.shData != null) &&
             m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
+        bool NeedsSHData => m_SHOrder != 0 || m_SHOnly;
+
         const int kGpuViewDataSize = 40;
+
+        static bool ShouldCreateGpuResources()
+        {
+#if UNITY_EDITOR
+            return Application.isPlaying;
+#else
+            return true;
+#endif
+        }
 
         void CreateResourcesForAsset()
         {
+            if (!ShouldCreateGpuResources())
+                return;
             if (!HasValidAsset)
                 return;
 
-            m_SplatCount = asset.splatCount;
+            m_SplatCount = EffectiveSplatCount();
             m_GpuPosData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.posData.dataSize / 4), 4) { name = "GaussianPosData" };
             m_GpuPosData.SetData(asset.posData.GetData<uint>());
             m_GpuOtherData = new GraphicsBuffer(GraphicsBuffer.Target.Raw | GraphicsBuffer.Target.CopySource, (int) (asset.otherData.dataSize / 4), 4) { name = "GaussianOtherData" };
             m_GpuOtherData.SetData(asset.otherData.GetData<uint>());
-            m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
-            m_GpuSHData.SetData(asset.shData.GetData<uint>());
+            if (!NeedsSHData)
+            {
+                m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, 4) { name = "GaussianSHDataDummy" };
+                m_GpuSHData.SetData(new uint[] { 0 });
+            }
+            else
+            {
+                m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
+                m_GpuSHData.SetData(asset.shData.GetData<uint>());
+            }
             var (texWidth, texHeight) = GaussianSplatAsset.CalcTextureSize(asset.splatCount);
             var texFormat = GaussianSplatAsset.ColorFormatToGraphics(asset.colorFormat);
             var tex = new Texture2D(texWidth, texHeight, texFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
@@ -419,7 +445,7 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
-            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
+            m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, kGpuViewDataSize);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
             // cube indices, most often we use only the first quad
             m_GpuIndexBuffer.SetData(new ushort[]
@@ -433,6 +459,13 @@ namespace GaussianSplatting.Runtime
             });
 
             InitSortBuffers(splatCount);
+        }
+
+        int EffectiveSplatCount()
+        {
+            if (asset == null)
+                return 0;
+            return m_MaxRenderedSplats > 0 ? Mathf.Min(asset.splatCount, m_MaxRenderedSplats) : asset.splatCount;
         }
 
         void InitSortBuffers(int count)
@@ -475,6 +508,9 @@ namespace GaussianSplatting.Runtime
 
         public void EnsureSorterAndRegister()
         {
+            if (!ShouldCreateGpuResources())
+                return;
+
             if (m_Sorter == null && resourcesAreSetUp)
             {
                 m_Sorter = new GpuSorting(m_CSSplatUtilities);
@@ -490,6 +526,8 @@ namespace GaussianSplatting.Runtime
         public void OnEnable()
         {
             m_FrameCounter = 0;
+            if (!ShouldCreateGpuResources())
+                return;
             if (!resourcesAreSetUp)
                 return;
 
@@ -703,11 +741,19 @@ namespace GaussianSplatting.Runtime
 
         public void Update()
         {
+            if (!ShouldCreateGpuResources())
+                return;
+
             var curHash = m_Asset ? m_Asset.dataHash : new Hash128();
-            if (m_PrevAsset != m_Asset || m_PrevHash != curHash)
+            if (!HasValidRenderSetup || m_PrevAsset != m_Asset || m_PrevHash != curHash ||
+                m_PrevSHOrder != m_SHOrder || m_PrevSHOnly != m_SHOnly ||
+                m_PrevMaxRenderedSplats != m_MaxRenderedSplats)
             {
                 m_PrevAsset = m_Asset;
                 m_PrevHash = curHash;
+                m_PrevSHOrder = m_SHOrder;
+                m_PrevSHOnly = m_SHOnly;
+                m_PrevMaxRenderedSplats = m_MaxRenderedSplats;
                 if (resourcesAreSetUp)
                 {
                     DisposeResourcesForAsset();

@@ -768,9 +768,9 @@ Camera:
   m_LensShift: {x: 0, y: 0}
   m_NormalizedViewPortRect:
     serializedVersion: 2
-    x: 0.05329457
+    x: 0
     y: 0
-    width: 0.89341086
+    width: 1
     height: 1
   near clip plane: 0.03
   far clip plane: 500
@@ -825,7 +825,7 @@ MonoBehaviour:
   targetSplat: {fileID: 2107022773}
   verticalFov: 60
   cameraFovLimit: 140
-  squareEditorGameView: 1
+  squareEditorGameView: 0
 --- !u!114 &1052589776
 MonoBehaviour:
   m_ObjectHideFlags: 0

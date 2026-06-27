@@ -14,5 +14,7 @@ namespace GaussianSplatting.Runtime
     public sealed class GaussianSplatProjectionCamera : MonoBehaviour
     {
         public GaussianSplatProjectionCameraRole role;
+        public Material compositeMaterial;
+        public bool compositeActive;
     }
 }

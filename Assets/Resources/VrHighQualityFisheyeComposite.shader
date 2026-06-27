@@ -14,12 +14,12 @@ Shader "Hidden/Gaussian Splatting/VR High Quality Fisheye Composite"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
-            #include "UnityCG.cginc"
+            #pragma multi_compile _ STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             struct appdata
             {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
+                uint vertexID : SV_VertexID;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -27,13 +27,20 @@ Shader "Hidden/Gaussian Splatting/VR High Quality Fisheye Composite"
             {
                 float4 vertex : SV_POSITION;
                 float2 uv : TEXCOORD0;
+                nointerpolation uint eyeIndex : TEXCOORD1;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
             sampler2D _LeftPX, _LeftNX, _LeftPY, _LeftNY, _LeftPZ, _LeftNZ;
             sampler2D _RightPX, _RightNX, _RightPY, _RightNY, _RightPZ, _RightNZ;
             float _FishEnabled;
-            float4 _PerspectiveScale;
+            float _MonoComposite;
+            float _SwapEyes;
+            float4 _LeftProjection;
+            float4 _RightProjection;
+            float4x4 _LeftInvProjection;
+            float4x4 _RightInvProjection;
             float4 _FishParams;
             float _MaxTheta;
             float4x4 _LeftEyeToWorld;
@@ -41,11 +48,13 @@ Shader "Hidden/Gaussian Splatting/VR High Quality Fisheye Composite"
 
             v2f vert(appdata v)
             {
-                v2f o;
+                v2f o = (v2f)0;
                 UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = v.uv;
+                o.vertex = GetFullScreenTriangleVertexPosition(v.vertexID);
+                o.uv = GetFullScreenTriangleTexCoord(v.vertexID);
+                o.eyeIndex = unity_StereoEyeIndex;
                 return o;
             }
 
@@ -115,22 +124,36 @@ Shader "Hidden/Gaussian Splatting/VR High Quality Fisheye Composite"
                 return tex2D(_RightNZ, uv);
             }
 
+            float3 ProjectionRay(float2 ndc)
+            {
+                float4 view = mul(UNITY_MATRIX_I_P, float4(ndc, -1.0, 1.0));
+                float safeW = abs(view.w) > 1e-6 ? view.w : (view.w < 0.0 ? -1e-6 : 1e-6);
+                view.xyz /= safeW;
+                return normalize(float3(view.x, view.y, -view.z));
+            }
+
             half4 frag(v2f i) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
+                uint sampleEyeIndex = _MonoComposite > 0.5 ? 0 : unity_StereoEyeIndex;
+                if (_SwapEyes > 0.5 && _MonoComposite < 0.5)
+                    sampleEyeIndex = 1 - sampleEyeIndex;
+
                 float2 ndc = i.uv * 2.0 - 1.0;
+                float3 perspectiveRay = ProjectionRay(ndc);
                 float3 direction;
                 if (_FishEnabled < 0.5)
                 {
-                    direction = normalize(float3(
-                        ndc.x / max(abs(_PerspectiveScale.x), 1e-6),
-                        ndc.y / max(abs(_PerspectiveScale.y), 1e-6), 1.0));
+                    direction = perspectiveRay;
                 }
                 else
                 {
-                    float2 p = float2(ndc.x / max(abs(_FishParams.z), 1e-6),
-                                      ndc.y / max(abs(_FishParams.w), 1e-6));
+                    float2 currentProjectionScale = abs(float2(UNITY_MATRIX_P._m00, UNITY_MATRIX_P._m11));
+                    float2 centeredNdc = perspectiveRay.xy / max(abs(perspectiveRay.z), 1e-6) * currentProjectionScale;
+                    float2 p = float2(centeredNdc.x / max(abs(_FishParams.z), 1e-6),
+                                      centeredNdc.y / max(abs(_FishParams.w), 1e-6));
                     float r = length(p);
                     float theta = _FishParams.x * atan(r * _FishParams.y);
                     if (theta > _MaxTheta - 0.01)
@@ -142,14 +165,9 @@ Shader "Hidden/Gaussian Splatting/VR High Quality Fisheye Composite"
                     direction = float3(radial * sinTheta, cosTheta);
                 }
 
-                if (unity_StereoEyeIndex == 0)
-                {
-                    float3 worldDirection = mul((float3x3)_LeftEyeToWorld, direction);
-                    return SampleLeft(worldDirection);
-                }
+                float3 worldDirection = mul((float3x3)UNITY_MATRIX_I_V, float3(direction.x, direction.y, -direction.z));
 
-                float3 worldDirection = mul((float3x3)_RightEyeToWorld, direction);
-                return SampleRight(worldDirection);
+                return sampleEyeIndex == 0 ? SampleLeft(worldDirection) : SampleRight(worldDirection);
             }
             ENDHLSL
         }

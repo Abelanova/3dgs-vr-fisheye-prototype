@@ -46,13 +46,11 @@ public sealed class CameraFovController : MonoBehaviour
 
     void OnDisable()
     {
-#if UNITY_EDITOR
         if (targetCamera == null)
             targetCamera = GetComponent<Camera>();
 
         if (targetCamera != null)
             targetCamera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
-#endif
     }
 
     void Apply()
@@ -64,7 +62,12 @@ public sealed class CameraFovController : MonoBehaviour
         {
             targetCamera.fieldOfView = Mathf.Min(verticalFov, cameraFovLimit);
 #if UNITY_EDITOR
-            ApplySquareEditorViewport(targetCamera);
+            if (!Application.isPlaying)
+                ApplySquareEditorViewport(targetCamera);
+            else
+                targetCamera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
+#else
+            targetCamera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
 #endif
         }
 

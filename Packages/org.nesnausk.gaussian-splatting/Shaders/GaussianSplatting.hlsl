@@ -369,6 +369,8 @@ SplatBufferDataType _SplatOther;
 SplatBufferDataType _SplatSH;
 Texture2D _SplatColor;
 uint _SplatFormat;
+uint _SHOrder;
+uint _SHOnly;
 
 // Match GaussianSplatAsset.VectorFormat
 #define VECTOR_FMT_32F 0
@@ -518,6 +520,13 @@ SplatData LoadSplatData(uint idx)
     s.rot       = DecodeRotation(DecodePacked_10_10_10_2(LoadUInt(_SplatOther, otherAddr)));
     s.scale     = LoadAndDecodeVector(_SplatOther, otherAddr + 4, scaleFmt);
     half4 col   = LoadSplatColTex(coord);
+
+    if (_SHOrder == 0 && _SHOnly == 0)
+    {
+        s.opacity = col.a;
+        s.sh.col = col.rgb;
+        return s;
+    }
 
     uint shIndex = idx;
     if (shFormat > VECTOR_FMT_6)
