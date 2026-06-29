@@ -5,9 +5,9 @@ using UnityEngine.UI;
 public sealed class FixedProjectionPanelPose : MonoBehaviour
 {
     const float HudDistance = 0.55f;
-    const float HudVerticalOffset = -0.12f;
     const float HudScale = 0.00043f;
     const float ReferenceFov = 60.0f;
+    static readonly Vector2 ViewportPosition = new(0.26f, 0.78f);
 
     [SerializeField] Camera targetCamera;
 
@@ -36,7 +36,8 @@ public sealed class FixedProjectionPanelPose : MonoBehaviour
         float referenceHalfFov = ReferenceFov * Mathf.Deg2Rad * 0.5f;
         float fovScale = Mathf.Tan(currentHalfFov) / Mathf.Max(Mathf.Tan(referenceHalfFov), 0.0001f);
 
-        transform.position = targetCamera.transform.TransformPoint(new Vector3(0.0f, HudVerticalOffset * fovScale, HudDistance));
+        transform.position = targetCamera.ViewportToWorldPoint(
+            new Vector3(ViewportPosition.x, ViewportPosition.y, HudDistance));
         transform.rotation = targetCamera.transform.rotation;
         transform.localScale = Vector3.one * (HudScale * fovScale);
     }

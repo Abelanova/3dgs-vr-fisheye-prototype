@@ -30,7 +30,7 @@ public sealed class ProjectionControlPanel : MonoBehaviour
     void Update()
     {
         if (!applying)
-            RefreshLabels();
+            RefreshFromTargets();
     }
 
     void RefreshFromTargets()

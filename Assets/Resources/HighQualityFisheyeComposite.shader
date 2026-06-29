@@ -82,8 +82,7 @@ Shader "Hidden/Gaussian Splatting/High Quality Fisheye Composite"
                                   ndc.y / max(abs(_FishParams.w), 1e-6));
                 float r = length(p);
                 float theta = _FishParams.x * atan(r * _FishParams.y);
-                if (theta > _MaxTheta - 0.01)
-                    return half4(0, 0, 0, 1);
+                theta = min(theta, max(_MaxTheta - 0.001, 0.001));
 
                 float sinTheta, cosTheta;
                 sincos(theta, sinTheta, cosTheta);

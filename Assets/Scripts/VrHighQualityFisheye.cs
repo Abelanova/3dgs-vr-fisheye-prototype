@@ -8,7 +8,7 @@ using UnityEngine.UI;
 public sealed class VrHighQualityFisheye : MonoBehaviour
 {
     [SerializeField] GaussianSplatRenderer targetSplat;
-    [SerializeField, Range(256, 1024)] int faceResolution = 512;
+    [SerializeField, Range(256, 2048)] int faceResolution = 1024;
     [SerializeField, Range(1, 3)] int facePairsPerFrame = 1;
     [SerializeField, Min(0.005f)] float positionRefreshDistance = 0.02f;
     [SerializeField] bool highQualityEnabled = true;
@@ -276,7 +276,7 @@ public sealed class VrHighQualityFisheye : MonoBehaviour
 
     void EnsureResources()
     {
-        int resolution = Mathf.Clamp(faceResolution, 256, 1024);
+        int resolution = Mathf.Clamp(faceResolution, 256, 2048);
         if (faceCameras != null && allocatedResolution == resolution)
             return;
 

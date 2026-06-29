@@ -14,6 +14,7 @@ using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Readers;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Simulation;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 public static class XrSimulatorPreviewSceneSetup
@@ -74,6 +75,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fovControllerSo = new SerializedObject(fovController);
         fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
         fovControllerSo.FindProperty("verticalFov").floatValue = camera.fieldOfView;
+        fovControllerSo.FindProperty("squareEditorGameView").boolValue = false;
         fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
 
         var xrOrigin = originObject.AddComponent<XROrigin>();
@@ -159,6 +161,7 @@ public static class XrSimulatorPreviewSceneSetup
         fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
         fovControllerSo.FindProperty("targetSplat").objectReferenceValue = splat;
         fovControllerSo.FindProperty("verticalFov").floatValue = camera.fieldOfView;
+        fovControllerSo.FindProperty("squareEditorGameView").boolValue = false;
         fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
 
         var keyboardControls = cameraObject.AddComponent<ProjectionKeyboardControls>();
@@ -180,7 +183,7 @@ public static class XrSimulatorPreviewSceneSetup
         SceneManager.SetActiveScene(previousScene);
         EditorSceneManager.CloseScene(scene, true);
 
-        Debug.Log("Created Assets/Scenes/DesktopPreview.unity. Open it, assign a GaussianSplatAsset to PutAssetsHere, then enter Play Mode. Use right mouse to look, WASD and Q/E to move, and Shift to move faster.");
+        Debug.Log("Created Assets/Scenes/DesktopPreview.unity. Open it, assign a GaussianSplatAsset to PutAssetsHere, then enter Play Mode. Use right mouse to look, WASD and Q/E to move, Shift to move faster, and [/] to adjust FOV plus fisheye together.");
     }
 
     static GameObject CreateController(string name, Transform parent, Vector3 fallbackPosition, bool left)
@@ -228,6 +231,13 @@ public static class XrSimulatorPreviewSceneSetup
         ray.selectInput = selectReader;
         ray.uiPressInput = selectReader;
 
+        var lineVisual = target.GetComponent<XRInteractorLineVisual>();
+        if (lineVisual != null)
+            lineVisual.enabled = false;
+
+        var lineRenderer = target.GetComponent<LineRenderer>();
+        if (lineRenderer != null)
+            lineRenderer.enabled = false;
     }
 
     static void CreateSimulator(Transform head, Transform leftController, Transform rightController)
@@ -302,7 +312,7 @@ public static class XrSimulatorPreviewSceneSetup
         fixedPoseSo.FindProperty("targetCamera").objectReferenceValue = eventCamera;
         fixedPoseSo.ApplyModifiedPropertiesWithoutUndo();
 
-        PopulateProjectionPanel(canvasObject, fovController, splat, "Drag with trigger or mouse; keys: , . fisheye   - = FOV");
+        PopulateProjectionPanel(canvasObject, fovController, splat, "Drag with trigger or mouse; [ ] both   , . fisheye   - = FOV");
     }
 
     static void CreateDesktopProjectionPanel(CameraFovController fovController, GaussianSplatRenderer splat)
@@ -323,14 +333,14 @@ public static class XrSimulatorPreviewSceneSetup
         var panelObject = new GameObject("Panel");
         panelObject.transform.SetParent(canvasObject.transform, false);
         var panelRect = panelObject.AddComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0.5f, 0.18f);
-        panelRect.anchorMax = new Vector2(0.5f, 0.18f);
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.anchorMin = new Vector2(0.0f, 1.0f);
+        panelRect.anchorMax = new Vector2(0.0f, 1.0f);
+        panelRect.pivot = new Vector2(0.0f, 1.0f);
+        panelRect.anchoredPosition = new Vector2(18.0f, -18.0f);
         panelRect.sizeDelta = new Vector2(360.0f, 146.0f);
         panelRect.localScale = Vector3.one * 0.65f;
 
-        PopulateProjectionPanel(panelObject, fovController, splat, "Right mouse: look   WASD/QE: move   Shift: faster");
+        PopulateProjectionPanel(panelObject, fovController, splat, "Right mouse: look   WASD/QE: move   [ ] both");
     }
 
     static void PopulateProjectionPanel(GameObject panelObject, CameraFovController fovController, GaussianSplatRenderer splat, string hintText)
