@@ -13,6 +13,7 @@ using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Readers;
 using UnityEngine.XR.Interaction.Toolkit.Inputs.Simulation;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 public static class XrSimulatorPreviewSceneSetup
@@ -72,6 +73,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fovControllerSo = new SerializedObject(fovController);
         fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
         fovControllerSo.FindProperty("verticalFov").floatValue = camera.fieldOfView;
+        fovControllerSo.FindProperty("squareEditorGameView").boolValue = false;
         fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
 
         var xrOrigin = originObject.AddComponent<XROrigin>();
@@ -166,6 +168,13 @@ public static class XrSimulatorPreviewSceneSetup
         ray.selectInput = selectReader;
         ray.uiPressInput = selectReader;
 
+        var lineVisual = target.GetComponent<XRInteractorLineVisual>();
+        if (lineVisual != null)
+            lineVisual.enabled = false;
+
+        var lineRenderer = target.GetComponent<LineRenderer>();
+        if (lineRenderer != null)
+            lineRenderer.enabled = false;
     }
 
     static void CreateSimulator(Transform head, Transform leftController, Transform rightController)
@@ -264,7 +273,7 @@ public static class XrSimulatorPreviewSceneSetup
         var fisheyeSlider = CreateSlider("Fisheye Slider", canvasObject.transform, 0.0f, 1.0f, 0.0f);
         SetRect((RectTransform)fisheyeSlider.transform, new Vector2(78, -84), new Vector2(202, 20), new Vector2(0, 1), new Vector2(0, 1));
 
-        var hint = CreateText("Hint", canvasObject.transform, "Drag with trigger or mouse; keys: , . fisheye   - = FOV", 12, TextAnchor.MiddleLeft);
+        var hint = CreateText("Hint", canvasObject.transform, "Drag with trigger or mouse; [ ] both   , . fisheye   - = FOV", 12, TextAnchor.MiddleLeft);
         hint.color = new Color(0.78f, 0.82f, 0.86f, 0.82f);
         SetRect(hint.rectTransform, new Vector2(16, -116), new Vector2(328, 18), new Vector2(0, 1), new Vector2(0, 1));
 

@@ -18,6 +18,11 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
 
         ResolveSplatTarget();
         float dt = Time.unscaledDeltaTime;
+        float pairedDelta = 0.0f;
+        if (Keyboard.current.leftBracketKey.isPressed)
+            pairedDelta -= 1.0f;
+        if (Keyboard.current.rightBracketKey.isPressed)
+            pairedDelta += 1.0f;
 
         if (splat != null)
         {
@@ -26,6 +31,7 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
                 fisheyeDelta -= 1.0f;
             if (Keyboard.current.periodKey.isPressed)
                 fisheyeDelta += 1.0f;
+            fisheyeDelta += pairedDelta;
 
             if (Mathf.Abs(fisheyeDelta) > 0.0f)
                 splat.m_FisheyeStrength = Mathf.Clamp01(splat.m_FisheyeStrength + fisheyeDelta * fisheyeStepPerSecond * dt);
@@ -38,6 +44,7 @@ public sealed class ProjectionKeyboardControls : MonoBehaviour
                 fovDelta -= 1.0f;
             if (Keyboard.current.equalsKey.isPressed)
                 fovDelta += 1.0f;
+            fovDelta += pairedDelta;
 
             if (Mathf.Abs(fovDelta) > 0.0f)
                 fovController.verticalFieldOfView += fovDelta * fovStepPerSecond * dt;

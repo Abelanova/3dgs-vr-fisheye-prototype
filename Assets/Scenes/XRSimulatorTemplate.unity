@@ -356,7 +356,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 263681742}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e988983f96fe1dd48800bcdfc82f23e9, type: 3}
   m_Name: 
@@ -2676,7 +2676,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: 'Drag with trigger or mouse; keys: , . fisheye   - = FOV'
+  m_Text: 'Drag with trigger or mouse; [ ] both   , . fisheye   - = FOV'
 --- !u!222 &1879277788
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -2727,7 +2727,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1928994629}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e988983f96fe1dd48800bcdfc82f23e9, type: 3}
   m_Name: 
@@ -3614,7 +3614,7 @@ MonoBehaviour:
   targetSplat: {fileID: 1693949349}
   verticalFov: 60
   cameraFovLimit: 140
-  squareEditorGameView: 1
+  squareEditorGameView: 0
 --- !u!20 &2120157587
 Camera:
   m_ObjectHideFlags: 0
@@ -3642,9 +3642,9 @@ Camera:
   m_LensShift: {x: 0, y: 0}
   m_NormalizedViewPortRect:
     serializedVersion: 2
-    x: 0.25891584
+    x: 0
     y: 0
-    width: 0.48216832
+    width: 1
     height: 1
   near clip plane: 0.03
   far clip plane: 500
