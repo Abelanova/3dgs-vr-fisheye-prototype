@@ -2320,7 +2320,7 @@ MonoBehaviour:
   m_MinPixelSize: 0.75
   m_SHOrder: 0
   m_SHOnly: 0
-  m_SortNthFrame: 6
+  m_SortNthFrame: 1
   m_FisheyeFieldOfView: 120
   m_FisheyeStrength: 0.45
   m_RenderMode: 0
@@ -3558,6 +3558,7 @@ GameObject:
   - component: {fileID: 2120157590}
   - component: {fileID: 2120157591}
   - component: {fileID: 2120157592}
+  - component: {fileID: 2120157593}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -3843,6 +3844,27 @@ MonoBehaviour:
   defaultFov: 120
   defaultFisheye: 0.45
   applyDefaultsOnStart: 1
+--- !u!114 &2120157593
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2120157583}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d341454a20a84fb4aafb2bf52e7a955f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  targetCamera: {fileID: 2120157587}
+  targetSplat: {fileID: 1693949349}
+  showOverlay: 1
+  logWarnings: 1
+  minExpectedIpdMeters: 0.01
+  staticPoseWarningSeconds: 2
+  stretchWarningRatio: 8
+  highFovWarningDegrees: 150
+  highFisheyeWarning: 0.85
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

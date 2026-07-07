@@ -101,6 +101,7 @@ float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, fl
     float k = fisheyeParams.y;
     float invK = fisheyeParams.z;
     float projMat00 = fisheyeParams.w;
+    float projMat11 = fisheyeParams2.x;
 
     float rxy = length(viewPos.xy);
     float negZ = -viewPos.z;
@@ -119,19 +120,20 @@ float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, fl
     float gTheta = k * sinTk / cosTk;
     float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
 
-    float focal = screenParams.x * projMat00 * 0.5;
+    float focalX = screenParams.x * projMat00 * 0.5;
+    float focalY = screenParams.y * projMat11 * 0.5;
     float d2 = dot(viewPos, viewPos);
     float r2 = max(rxy * rxy, 1e-8);
     float kCoeff = rxy > 1e-4 ? (gPrime * negZ / d2 - fisheyeS) / r2 : 0;
 
     float3x3 J = float3x3(
-        focal * (fisheyeS + kCoeff * viewPos.x * viewPos.x),
-        focal * kCoeff * viewPos.x * viewPos.y,
-        focal * gPrime * viewPos.x / d2,
+        focalX * (fisheyeS + kCoeff * viewPos.x * viewPos.x),
+        focalX * kCoeff * viewPos.x * viewPos.y,
+        focalX * gPrime * viewPos.x / d2,
 
-        focal * kCoeff * viewPos.x * viewPos.y,
-        focal * (fisheyeS + kCoeff * viewPos.y * viewPos.y),
-        focal * gPrime * viewPos.y / d2,
+        focalY * kCoeff * viewPos.x * viewPos.y,
+        focalY * (fisheyeS + kCoeff * viewPos.y * viewPos.y),
+        focalY * gPrime * viewPos.y / d2,
 
         0, 0, 0
     );

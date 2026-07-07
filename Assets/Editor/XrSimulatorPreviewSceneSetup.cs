@@ -109,6 +109,7 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.FindProperty("splat").objectReferenceValue = splat;
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
+        AddDirectFisheyeDiagnostics(cameraObject, camera, splat);
         CreateProjectionPanel(camera, fovController, splat);
         CreateSimulator(cameraObject.transform, leftController.transform, rightController.transform);
 
@@ -170,6 +171,7 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.FindProperty("splat").objectReferenceValue = splat;
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
+        AddDirectFisheyeDiagnostics(cameraObject, camera, splat);
         CreateDesktopProjectionPanel(fovController, splat);
 
         var lightObject = new GameObject("Directional Light");
@@ -282,6 +284,15 @@ public static class XrSimulatorPreviewSceneSetup
             SetObjectReferenceIfPresent(so, "m_CameraTransform", head);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
+    }
+
+    static void AddDirectFisheyeDiagnostics(GameObject cameraObject, Camera camera, GaussianSplatRenderer splat)
+    {
+        var diagnostics = cameraObject.AddComponent<DirectFisheyeVrDiagnostics>();
+        var diagnosticsSo = new SerializedObject(diagnostics);
+        diagnosticsSo.FindProperty("targetCamera").objectReferenceValue = camera;
+        diagnosticsSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        diagnosticsSo.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static void SetObjectReferenceIfPresent(SerializedObject so, string propertyName, Object value)

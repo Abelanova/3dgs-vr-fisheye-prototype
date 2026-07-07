@@ -110,7 +110,7 @@ namespace GaussianSplatting.Runtime
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
         public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb,
-            Camera.StereoscopicEye? stereoEye = null, bool updateSortAndFrame = true)
+            Camera.StereoscopicEye? stereoEye = null, bool updateSortAndFrame = true, bool forceSort = false)
         {
             Material matComposite = null;
             foreach (var kvp in m_ActiveSplats)
@@ -122,8 +122,9 @@ namespace GaussianSplatting.Runtime
 
                 // sort
                 var matrix = gs.transform.localToWorldMatrix;
-                if (updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0)
-                    gs.SortPoints(cmb, cam, matrix);
+                int sortNthFrame = Mathf.Max(1, gs.m_SortNthFrame);
+                if (forceSort || updateSortAndFrame && gs.m_FrameCounter % sortNthFrame == 0)
+                    gs.SortPoints(cmb, cam, matrix, stereoEye);
                 if (updateSortAndFrame)
                     ++gs.m_FrameCounter;
 
@@ -645,16 +646,22 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
         }
 
-        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
+        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix,
+            Camera.StereoscopicEye? stereoEye = null)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
 
-            Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
+            Matrix4x4 worldToCamMatrix = stereoEye.HasValue
+                ? cam.GetStereoViewMatrix(stereoEye.Value)
+                : cam.worldToCameraMatrix;
             worldToCamMatrix.m20 *= -1;
             worldToCamMatrix.m21 *= -1;
             worldToCamMatrix.m22 *= -1;
-            var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam);
+            int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
+            bool useEyeTexture = stereoEye.HasValue && eyeW != 0 && eyeH != 0;
+            float aspect = useEyeTexture ? (float)eyeW / Mathf.Max(eyeH, 1) : 0.0f;
+            var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam, aspect);
 
             // calculate distance to the camera for each splat
             cmd.BeginSample(s_ProfSort);

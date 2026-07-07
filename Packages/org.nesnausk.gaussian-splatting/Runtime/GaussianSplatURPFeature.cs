@@ -38,6 +38,7 @@ namespace GaussianSplatting.Runtime
                 internal bool RenderStereoSlices;
                 internal Camera.StereoscopicEye? MultipassEye;
                 internal bool UpdateSortAndFrame;
+                internal bool ForceStereoSort;
             }
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -65,6 +66,7 @@ namespace GaussianSplatting.Runtime
                         : Camera.StereoscopicEye.Right)
                     : null;
                 passData.UpdateSortAndFrame = !passData.MultipassEye.HasValue || cameraData.xr.multipassId == 0;
+                passData.ForceStereoSort = passData.RenderStereoSlices || passData.MultipassEye.HasValue;
 
                 builder.UseTexture(resourceData.activeColorTexture, AccessFlags.ReadWrite);
                 builder.UseTexture(resourceData.activeDepthTexture);
@@ -81,12 +83,12 @@ namespace GaussianSplatting.Runtime
                         CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth,
                             ClearFlag.Color, Color.clear, depthSlice: 0);
                         matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(
-                            data.CameraData.camera, commandBuffer, Camera.StereoscopicEye.Left, true);
+                            data.CameraData.camera, commandBuffer, Camera.StereoscopicEye.Left, true, true);
 
                         CoreUtils.SetRenderTarget(commandBuffer, data.GaussianSplatRT, data.SourceDepth,
                             ClearFlag.Color, Color.clear, depthSlice: 1);
                         GaussianSplatRenderSystem.instance.SortAndRenderSplats(
-                            data.CameraData.camera, commandBuffer, Camera.StereoscopicEye.Right, false);
+                            data.CameraData.camera, commandBuffer, Camera.StereoscopicEye.Right, false, true);
                     }
                     else
                     {
@@ -94,7 +96,7 @@ namespace GaussianSplatting.Runtime
                             ClearFlag.Color, Color.clear);
                         matComposite = GaussianSplatRenderSystem.instance.SortAndRenderSplats(
                             data.CameraData.camera, commandBuffer, data.MultipassEye,
-                            data.UpdateSortAndFrame);
+                            data.UpdateSortAndFrame, data.ForceStereoSort);
                     }
                     commandBuffer.BeginSample(GaussianSplatRenderSystem.s_ProfCompose);
                     if (data.RenderStereoSlices)
