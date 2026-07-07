@@ -1,5 +1,6 @@
 using GaussianSplatting.Runtime;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public sealed class ProjectionControlPanel : MonoBehaviour
@@ -29,8 +30,13 @@ public sealed class ProjectionControlPanel : MonoBehaviour
 
     void Update()
     {
-        if (!applying)
+        if (applying)
+            return;
+
+        if (IsEditingSlider())
             RefreshLabels();
+        else
+            RefreshFromTargets();
     }
 
     void RefreshFromTargets()
@@ -73,6 +79,20 @@ public sealed class ProjectionControlPanel : MonoBehaviour
         if (fisheyeValueText != null && splat != null)
             fisheyeValueText.text = splat.m_FisheyeStrength.ToString("0.00");
     }
+
+    bool IsEditingSlider()
+    {
+        var selected = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
+        if (selected == null)
+            return false;
+
+        Transform selectedTransform = selected.transform;
+        return IsWithinSlider(selectedTransform, fovSlider) || IsWithinSlider(selectedTransform, fisheyeSlider);
+    }
+
+    static bool IsWithinSlider(Transform selected, Slider slider) =>
+        slider != null && selected != null &&
+        (selected == slider.transform || selected.IsChildOf(slider.transform));
 
     void ResolveSplatTarget()
     {

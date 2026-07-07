@@ -35,6 +35,11 @@ Thumbs.db
 
 # Large local scratch folders
 /textvr/
+/Presentation/
+/Recordings/
+/_AssetArchive/
+/Shot-*.png
+/hs_err_pid*.log
 
 # Local Gaussian splat datasets and generated imports
 *.ply
