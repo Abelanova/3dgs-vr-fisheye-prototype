@@ -116,7 +116,7 @@ RWByteAddressBuffer _SplatSelectedBits;
 ByteAddressBuffer _SplatDeletedBits;
 uint _SplatBitsValid;
 
-void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
+void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2, out float clampRatio)
 {
     #if 0 // does not quite give the correct results?
 
@@ -171,8 +171,21 @@ void DecomposeCovariance(float3 cov2d, out float2 v1, out float2 v2)
     diagVec.y = -diagVec.y;
 
     float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));
-    float axis1Length = min(sqrt(max(2.0 * lambda1, 0.0)), vmin * 0.5);
-    float axis2Length = min(sqrt(max(2.0 * lambda2, 0.0)), vmin * 0.5);
+    float maxAxisLength = vmin * 0.5;
+    if (_FisheyeParams.x > 0.0001)
+    {
+        // Fisheye can bring near-side splats into view; cap their footprint so
+        // one stretched splat cannot become a screen-sized translucent glow.
+        float wideFisheye = saturate((_FisheyeParams2.y - 1.5707963) / 0.34906585);
+        maxAxisLength = max(1.0, vmin * lerp(0.25, 0.10, wideFisheye));
+    }
+
+    float axis1Unclamped = sqrt(max(2.0 * lambda1, 0.0));
+    float axis2Unclamped = sqrt(max(2.0 * lambda2, 0.0));
+    clampRatio = max(axis1Unclamped, axis2Unclamped) / max(maxAxisLength, 1.0);
+
+    float axis1Length = min(axis1Unclamped, maxAxisLength);
+    float axis2Length = min(axis2Unclamped, maxAxisLength);
     v1 = axis1Length * diagVec;
     v2 = axis2Length * float2(diagVec.y, -diagVec.x);
 
@@ -310,17 +323,24 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
                 covarianceProjection, _VecScreenParams, aaFactor);
 
         float finalOpacity = min(splat.opacity * opacityScale * aaFactor, 65000);
-        DecomposeCovariance(cov2d, view.axis1, view.axis2);
+        float axisClampRatio;
+        DecomposeCovariance(cov2d, view.axis1, view.axis2, axisClampRatio);
+        if (_FisheyeParams.x > 0.0001 && axisClampRatio > 1.0)
+        {
+            finalOpacity *= rcp(axisClampRatio * axisClampRatio);
+        }
 
-        // Match PlayCanvas' footprint-aware x/y frustum test for ordinary
-        // perspective. Fisheye stays unculled here because the footprint warp is
-        // non-linear and can remove visible splats while moving.
+        // Keep centers whose inflated footprint can still reach the image, but
+        // reject fully off-screen fisheye footprints. Without this, wide fisheye
+        // views can blend distant edge splats into a screen-sized translucent fog.
         float lMax = 4.0 * max(length(view.axis1), length(view.axis2));
         bool belowMinimumSize = lMax < _MinPixelSize;
         float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;
         bool outsidePerspectiveView = _FisheyeParams.x <= 0.0001 &&
             any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww);
-        if (belowMinimumSize || outsidePerspectiveView)
+        bool outsideFisheyeView = _FisheyeParams.x > 0.0001 &&
+            any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww * 1.05);
+        if (belowMinimumSize || outsidePerspectiveView || outsideFisheyeView)
         {
             centerClipPos.w = 0;
             view.pos = centerClipPos;

@@ -1967,7 +1967,7 @@ MonoBehaviour:
   m_RenderOrder: 0
   m_SplatScale: 1
   m_OpacityScale: 1
-  m_NearFadeDistance: 0
+  m_NearFadeDistance: 0.8
   m_SHOrder: 3
   m_SHOnly: 0
   m_SortNthFrame: 1
