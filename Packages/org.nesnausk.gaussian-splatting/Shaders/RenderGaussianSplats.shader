@@ -31,6 +31,8 @@ struct v2f
 StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
+float _GaussianStereoEyeSign;
+float _GaussianStereoEyeSignOverride;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -63,6 +65,15 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		float clipScale = min(1.0, sqrt(max(0.0, log(opacity / alphaClipForward))) * 0.5);
 		o.pos = quadPos * clipScale;
+
+		float eyeSign = _GaussianStereoEyeSign;
+		if (_GaussianStereoEyeSignOverride != 0.0)
+			eyeSign = _GaussianStereoEyeSignOverride;
+		#if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED) || defined(UNITY_SINGLE_PASS_STEREO)
+		if (eyeSign == 0.0)
+			eyeSign = unity_StereoEyeIndex == 0 ? 1.0 : -1.0;
+		#endif
+		centerClipPos.x += eyeSign * view.stereoDisparity * centerClipPos.w;
 
 		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * (4.0 * clipScale / _ScreenParams.xy);
 		o.vertex = centerClipPos;

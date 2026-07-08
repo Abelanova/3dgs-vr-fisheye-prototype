@@ -1,6 +1,6 @@
 # Direct Covariance Fisheye VR Validation
 
-This project branch validates the direct covariance fisheye path, not the cubemap path.
+This project branch validates the shared cyclopean direct covariance fisheye path, not the cubemap path.
 
 ## Scene Setup
 
@@ -48,12 +48,41 @@ This branch forces per-eye splat sorting in both modes. If one mode fails and th
 
 Use the projection panel or controller bindings and test:
 
-- FOV `90`, fisheye `0.0`.
-- FOV `120`, fisheye `0.45`.
-- FOV `150`, fisheye `0.70`.
-- FOV `180+`, fisheye `0.85-1.0`.
+- FOV `120`, fisheye `0.20`.
+- FOV `150`, fisheye `0.30`.
+- FOV `170`, fisheye `0.40`.
+- FOV `190`, fisheye `0.60`.
+- FOV `220`, fisheye `1.00`.
+
+Start with shared stereo settings:
+
+- Stereo Scale `0.25`.
+- Max Per-Eye Shift `0.004` NDC.
+- Radial Compression `2.0`.
+- Convergence `2.0 m`.
+
+Keep these settings until dense diagnostics reach the fusion targets below. Only then increase depth gradually:
+
+- Stereo Scale `0.25 -> 0.35 -> 0.50`.
+- Max Per-Eye Shift `0.004 -> 0.006 -> 0.008`.
 
 Watch the edge of the view for splats that smear into long lines, flip orientation, or cover a large part of the eye. The overlay's `Fisheye stretch probe` is a projection-level warning; it does not replace visual inspection of the actual splat asset.
+
+## Shared Fisheye Stereo Model
+
+Each Gaussian is projected once from the cyclopean camera for its fisheye center and covariance. The two virtual eyes are only used to estimate a geometry-informed horizontal disparity through the same fisheye function. The final eye positions share `y`, footprint axes, size, orientation, and distortion; only `x` receives the convergence-corrected disparity.
+
+Before clamping, the disparity is attenuated toward the fisheye edge:
+
+`radialWeight = 1 / (1 + radialCompression * dot(centerCyclopean, centerCyclopean))`
+
+This keeps central depth while suppressing the large, spatially varying edge disparity that is difficult to fuse. The first dense-flow validation target is:
+
+- Center horizontal disparity: `0.5-1.5 px`.
+- Left/right edge P95: no more than `2-3 px`.
+- Near-ground P95: no more than `3-4 px`.
+- Global vertical disparity P95: below `0.25 px`.
+- Foreground vertical disparity P95: below `0.5 px`.
 
 ## Stereo Diagnostic Capture Outputs
 

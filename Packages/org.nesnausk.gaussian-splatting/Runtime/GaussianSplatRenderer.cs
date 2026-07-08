@@ -170,6 +170,10 @@ namespace GaussianSplatting.Runtime
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
                 cmb.BeginSample(s_ProfDraw);
+                float stereoEyeSign = stereoEye.HasValue
+                    ? stereoEye.Value == Camera.StereoscopicEye.Left ? 1.0f : -1.0f
+                    : 0.0f;
+                cmb.SetGlobalFloat(GaussianSplatRenderer.Props.GaussianStereoEyeSign, stereoEyeSign);
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
             }
@@ -254,6 +258,16 @@ namespace GaussianSplatting.Runtime
         public float m_FisheyeFieldOfView = 60.0f;
         [Range(0, 1)] [Tooltip("Fisheye projection strength. 0 uses the normal camera projection.")]
         public float m_FisheyeStrength;
+        [Min(0.0f)] [Tooltip("Fallback stereo eye separation used by shared fisheye stereo when the XR runtime does not report a valid IPD.")]
+        public float m_StereoIpdMeters = 0.064f;
+        [Min(0.01f)] [Tooltip("Distance in meters where shared fisheye stereo converges to near-zero horizontal disparity.")]
+        public float m_StereoConvergenceDistance = 2.0f;
+        [Range(0.0f, 1.0f)] [Tooltip("Scales the geometry-informed horizontal fisheye stereo disparity.")]
+        public float m_StereoScale = 0.25f;
+        [Min(0.0f)] [Tooltip("Reduces stereo disparity toward the fisheye edges using 1 / (1 + lambda * radius squared).")]
+        public float m_StereoRadialCompression = 2.0f;
+        [Range(0.0f, 0.1f)] [Tooltip("Maximum per-eye horizontal shift in NDC for shared fisheye stereo.")]
+        public float m_StereoMaxShift = 0.004f;
 
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
@@ -343,6 +357,13 @@ namespace GaussianSplatting.Runtime
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int FisheyeParams = Shader.PropertyToID("_FisheyeParams");
             public static readonly int FisheyeParams2 = Shader.PropertyToID("_FisheyeParams2");
+            public static readonly int StereoIpdMeters = Shader.PropertyToID("_StereoIpdMeters");
+            public static readonly int StereoConvergenceDistance = Shader.PropertyToID("_StereoConvergenceDistance");
+            public static readonly int StereoScale = Shader.PropertyToID("_StereoScale");
+            public static readonly int StereoRadialCompression = Shader.PropertyToID("_StereoRadialCompression");
+            public static readonly int StereoMaxShift = Shader.PropertyToID("_StereoMaxShift");
+            public static readonly int GaussianStereoEyeSign = Shader.PropertyToID("_GaussianStereoEyeSign");
+            public static readonly int GaussianStereoEyeSignOverride = Shader.PropertyToID("_GaussianStereoEyeSignOverride");
             public static readonly int CameraTargetTexture = Shader.PropertyToID("_CameraTargetTexture");
             public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
             public static readonly int SelectionDelta = Shader.PropertyToID("_SelectionDelta");
@@ -392,7 +413,7 @@ namespace GaussianSplatting.Runtime
             m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
-        const int kGpuViewDataSize = 40;
+        const int kGpuViewDataSize = 48;
 
         void CreateResourcesForAsset()
         {
@@ -608,18 +629,27 @@ namespace GaussianSplatting.Runtime
             var tr = transform;
 
             bool explicitEye = stereoEye.HasValue;
-            Matrix4x4 matView = explicitEye ? cam.GetStereoViewMatrix(stereoEye.Value) : cam.worldToCameraMatrix;
-            Matrix4x4 projection = explicitEye ? cam.GetStereoProjectionMatrix(stereoEye.Value) : cam.projectionMatrix;
+            bool sharedFisheyeStereo = m_FisheyeStrength > 0.0001f &&
+                m_StereoScale > 0.0f && m_StereoMaxShift > 0.0f;
+            Matrix4x4 matView = explicitEye && !sharedFisheyeStereo
+                ? cam.GetStereoViewMatrix(stereoEye.Value)
+                : cam.worldToCameraMatrix;
+            Matrix4x4 projection = explicitEye && !sharedFisheyeStereo
+                ? cam.GetStereoProjectionMatrix(stereoEye.Value)
+                : cam.projectionMatrix;
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
             int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
             bool useEyeTexture = explicitEye && eyeW != 0 && eyeH != 0;
             Vector4 screenPar = new Vector4(useEyeTexture ? eyeW : screenW, useEyeTexture ? eyeH : screenH, 0, 0);
-            Vector4 camPos = explicitEye ? matView.inverse.GetColumn(3) : cam.transform.position;
+            Vector4 camPos = explicitEye && !sharedFisheyeStereo ? matView.inverse.GetColumn(3) : cam.transform.position;
             var (fisheyeParams, fisheyeParams2) = CalcFisheyeParams(cam,
                 screenPar.x / Mathf.Max(screenPar.y, 1.0f));
             Matrix4x4 gpuProjection = GL.GetGPUProjectionMatrix(projection, true);
+            float stereoIpdMeters = sharedFisheyeStereo ? ResolveStereoIpd(cam, m_StereoIpdMeters) : 0.0f;
+            float stereoScale = sharedFisheyeStereo ? m_StereoScale : 0.0f;
+            float stereoMaxShift = sharedFisheyeStereo ? m_StereoMaxShift : 0.0f;
 
             // calculate view dependent data for each splat
             SetAssetDataOnCS(cmb, KernelIndices.CalcViewData);
@@ -635,6 +665,12 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.FisheyeParams, fisheyeParams);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.FisheyeParams2, fisheyeParams2);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.StereoIpdMeters, stereoIpdMeters);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.StereoConvergenceDistance, m_StereoConvergenceDistance);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.StereoScale, stereoScale);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.StereoRadialCompression,
+                sharedFisheyeStereo ? Mathf.Max(m_StereoRadialCompression, 0.0f) : 0.0f);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.StereoMaxShift, stereoMaxShift);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatScale, m_SplatScale);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatOpacityScale, m_OpacityScale);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.NearFadeDistance, m_NearFadeDistance);
@@ -652,7 +688,8 @@ namespace GaussianSplatting.Runtime
             if (cam.cameraType == CameraType.Preview)
                 return;
 
-            Matrix4x4 worldToCamMatrix = stereoEye.HasValue
+            bool sharedFisheyeStereo = m_FisheyeStrength > 0.0001f;
+            Matrix4x4 worldToCamMatrix = stereoEye.HasValue && !sharedFisheyeStereo
                 ? cam.GetStereoViewMatrix(stereoEye.Value)
                 : cam.worldToCameraMatrix;
             worldToCamMatrix.m20 *= -1;
@@ -682,6 +719,25 @@ namespace GaussianSplatting.Runtime
             EnsureSorterAndRegister();
             m_Sorter.Dispatch(cmd, m_SorterArgs);
             cmd.EndSample(s_ProfSort);
+        }
+
+        static float ResolveStereoIpd(Camera cam, float fallbackIpdMeters)
+        {
+            float fallback = Mathf.Clamp(fallbackIpdMeters, 0.0f, 0.2f);
+            if (cam == null || !cam.stereoEnabled)
+                return fallback;
+
+            Matrix4x4 left = cam.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
+            Matrix4x4 right = cam.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
+            float measured = Vector3.Distance(EyePosition(left), EyePosition(right));
+            return measured > 0.001f && measured < 0.2f ? measured : fallback;
+        }
+
+        static Vector3 EyePosition(Matrix4x4 viewMatrix)
+        {
+            Matrix4x4 inverse = viewMatrix.inverse;
+            Vector4 column = inverse.GetColumn(3);
+            return new Vector3(column.x, column.y, column.z);
         }
 
         public (Vector4, Vector4) GetFisheyeShaderParams(Camera cam) => CalcFisheyeParams(cam);

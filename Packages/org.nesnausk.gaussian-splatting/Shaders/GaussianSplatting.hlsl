@@ -155,6 +155,32 @@ float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, fl
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
+bool IsFisheyeCenterValid(float3 viewPos, float4 fisheyeParams2)
+{
+    float rxy = length(viewPos.xy);
+    float negZ = -viewPos.z;
+    float theta = atan2(rxy, negZ);
+    return theta <= fisheyeParams2.y - 0.01 && dot(viewPos, viewPos) >= 0.0001;
+}
+
+float2 ProjectFisheyeCenter(float3 viewPos, float4 fisheyeParams, float4 fisheyeParams2)
+{
+    float k = fisheyeParams.y;
+    float invK = fisheyeParams.z;
+    float projMat00 = fisheyeParams.w;
+    float projMat11 = fisheyeParams2.x;
+
+    float rxy = length(viewPos.xy);
+    float negZ = -viewPos.z;
+    float theta = atan2(rxy, negZ);
+    float tk = theta * invK;
+    float sinTk, cosTk;
+    sincos(tk, sinTk, cosTk);
+    float gTheta = k * sinTk / cosTk;
+    float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
+    return float2(projMat00 * fisheyeS * viewPos.x, -projMat11 * fisheyeS * viewPos.y);
+}
+
 float3 CalcConic(float3 cov2d)
 {
     float det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
@@ -678,6 +704,8 @@ struct SplatViewData
     float4 pos;
     float2 axis1, axis2;
     uint2 color; // 4xFP16
+    float stereoDisparity;
+    float stereoPadding;
 };
 
 // If we are rendering into backbuffer directly (e.g. HDR off, no postprocessing),

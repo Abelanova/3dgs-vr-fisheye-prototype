@@ -34,10 +34,9 @@ namespace GaussianSplatting.Runtime
             }
 
             float ipd = GetIpd(camera);
-            EyePose leftPose = GetEyePose(camera, -ipd * 0.5f, headOffset, headRotation);
-            EyePose rightPose = GetEyePose(camera, ipd * 0.5f, headOffset, headRotation);
-            Texture2D left = RenderEyeCamera(camera, leftPose, width, height, backgroundColor);
-            Texture2D right = RenderEyeCamera(camera, rightPose, width, height, backgroundColor);
+            EyePose centerPose = GetEyePose(camera, 0.0f, headOffset, headRotation);
+            Texture2D left = RenderEyeCamera(camera, centerPose, width, height, backgroundColor, 1.0f);
+            Texture2D right = RenderEyeCamera(camera, centerPose, width, height, backgroundColor, -1.0f);
 
             if (left == null || right == null)
             {
@@ -60,7 +59,7 @@ namespace GaussianSplatting.Runtime
             string basePath = Path.Combine(Path.GetDirectoryName(path) ?? ".",
                 Path.GetFileNameWithoutExtension(path));
             WritePreviewImages(left, right, basePath);
-            WriteFeatureMeasurements(camera, splat, basePath, width, height, leftPose, rightPose, ipd);
+            WriteFeatureMeasurements(camera, splat, basePath, width, height, centerPose, ipd);
             message = $"Stereo diagnostics {width}x{height} per eye, IPD {ipd:F3}m, previews and feature measurements written.";
 
             Object.Destroy(left);
@@ -145,9 +144,9 @@ namespace GaussianSplatting.Runtime
         }
 
         static void WriteFeatureMeasurements(Camera camera, GaussianSplatRenderer splat, string basePath,
-            int width, int height, EyePose leftPose, EyePose rightPose, float ipd)
+            int width, int height, EyePose centerPose, float ipd)
         {
-            FeatureProbe[] probes = BuildFeatureProbes(camera, splat, leftPose, rightPose);
+            FeatureProbe[] probes = BuildFeatureProbes(camera, splat, centerPose);
             string csvPath = basePath + "_feature_disparity.csv";
             string txtPath = basePath + "_feature_disparity.txt";
 
@@ -164,8 +163,8 @@ namespace GaussianSplatting.Runtime
 
             foreach (FeatureProbe probe in probes)
             {
-                bool leftVisible = ProjectWorldPoint(camera, splat, probe.worldPosition, leftPose, width, height, out Vector2 leftPixel);
-                bool rightVisible = ProjectWorldPoint(camera, splat, probe.worldPosition, rightPose, width, height, out Vector2 rightPixel);
+                bool leftVisible = ProjectWorldPoint(camera, splat, probe.worldPosition, centerPose, width, height, 1.0f, out Vector2 leftPixel);
+                bool rightVisible = ProjectWorldPoint(camera, splat, probe.worldPosition, centerPose, width, height, -1.0f, out Vector2 rightPixel);
                 float dx = leftVisible && rightVisible ? leftPixel.x - rightPixel.x : float.NaN;
                 float dy = leftVisible && rightVisible ? leftPixel.y - rightPixel.y : float.NaN;
 
@@ -194,18 +193,16 @@ namespace GaussianSplatting.Runtime
             File.WriteAllText(txtPath, txt.ToString());
         }
 
-        static FeatureProbe[] BuildFeatureProbes(Camera camera, GaussianSplatRenderer splat,
-            EyePose leftPose, EyePose rightPose)
+        static FeatureProbe[] BuildFeatureProbes(Camera camera, GaussianSplatRenderer splat, EyePose centerPose)
         {
             if (splat != null && splat.m_Asset != null)
             {
                 Bounds bounds = BoundsFromSplat(splat);
                 Vector3 center = bounds.center;
                 Vector3 extents = bounds.extents;
-                Vector3 headCenter = (leftPose.position + rightPose.position) * 0.5f;
                 Vector3[] corners = BoundsCorners(bounds);
-                Vector3 nearGround = ClosestLowestCorner(corners, headCenter);
-                Vector3 farTarget = FarthestCorner(corners, headCenter);
+                Vector3 nearGround = ClosestLowestCorner(corners, centerPose.position);
+                Vector3 farTarget = FarthestCorner(corners, centerPose.position);
 
                 return new[]
                 {
@@ -218,7 +215,7 @@ namespace GaussianSplatting.Runtime
             }
 
             Transform tr = camera.transform;
-            Vector3 origin = (leftPose.position + rightPose.position) * 0.5f;
+            Vector3 origin = centerPose.position;
             return new[]
             {
                 new FeatureProbe("center", origin + tr.forward * 3.0f),
@@ -298,7 +295,7 @@ namespace GaussianSplatting.Runtime
         }
 
         static bool ProjectWorldPoint(Camera camera, GaussianSplatRenderer splat, Vector3 worldPosition,
-            EyePose eyePose, int width, int height, out Vector2 pixel)
+            EyePose eyePose, int width, int height, float stereoEyeSign, out Vector2 pixel)
         {
             pixel = Vector2.zero;
             Matrix4x4 view = Matrix4x4.TRS(eyePose.position, eyePose.rotation, Vector3.one).inverse;
@@ -319,6 +316,8 @@ namespace GaussianSplatting.Runtime
                 float fisheyeScale = rxy > 1e-4f ? gTheta / rxy : negZ > 0.0f ? 1.0f / negZ : 0.0f;
                 float clipX = fisheyeParams.w * fisheyeScale * viewPosition.x;
                 float clipY = -fisheyeParams2.x * fisheyeScale * viewPosition.y;
+                clipX += stereoEyeSign * SharedFisheyeStereoDisparity(splat, camera,
+                    viewPosition, fisheyeParams, fisheyeParams2);
                 pixel = new Vector2(
                     (clipX * 0.5f + 0.5f) * width,
                     (-clipY * 0.5f + 0.5f) * height);
@@ -373,6 +372,61 @@ namespace GaussianSplatting.Runtime
             float projMat11 = cornerScale / (k * Mathf.Tan(effHalfFovY * invK));
 
             return (new Vector4(t, k, invK, projMat00), new Vector4(projMat11, maxTheta, 0, 0));
+        }
+
+        static float SharedFisheyeStereoDisparity(GaussianSplatRenderer splat, Camera camera,
+            Vector3 viewPosition, Vector4 fisheyeParams, Vector4 fisheyeParams2)
+        {
+            if (splat == null || splat.m_StereoScale <= 0.0f || splat.m_StereoMaxShift <= 0.0f)
+                return 0.0f;
+
+            float ipd = GetIpd(camera);
+            if (ipd <= 0.0001f)
+                ipd = splat.m_StereoIpdMeters;
+
+            float halfIpd = ipd * 0.5f;
+            Vector3 virtualLeft = viewPosition + new Vector3(halfIpd, 0.0f, 0.0f);
+            Vector3 virtualRight = viewPosition - new Vector3(halfIpd, 0.0f, 0.0f);
+            if (!IsFisheyeCenterValid(virtualLeft, fisheyeParams2) ||
+                !IsFisheyeCenterValid(virtualRight, fisheyeParams2))
+                return 0.0f;
+
+            float leftRaw = ProjectFisheyeCenter(virtualLeft, fisheyeParams, fisheyeParams2).x;
+            float rightRaw = ProjectFisheyeCenter(virtualRight, fisheyeParams, fisheyeParams2).x;
+            float disparityRaw = 0.5f * (leftRaw - rightRaw);
+
+            float convergence = Mathf.Max(splat.m_StereoConvergenceDistance, 0.01f);
+            float convergenceLeft = ProjectFisheyeCenter(new Vector3(halfIpd, 0.0f, -convergence),
+                fisheyeParams, fisheyeParams2).x;
+            float convergenceRight = ProjectFisheyeCenter(new Vector3(-halfIpd, 0.0f, -convergence),
+                fisheyeParams, fisheyeParams2).x;
+            float convergenceDisparity = 0.5f * (convergenceLeft - convergenceRight);
+
+            Vector2 centerCyclopean = ProjectFisheyeCenter(viewPosition, fisheyeParams, fisheyeParams2);
+            float radialWeight = 1.0f /
+                (1.0f + Mathf.Max(splat.m_StereoRadialCompression, 0.0f) * centerCyclopean.sqrMagnitude);
+            return Mathf.Clamp(splat.m_StereoScale * radialWeight *
+                (disparityRaw - convergenceDisparity),
+                -splat.m_StereoMaxShift, splat.m_StereoMaxShift);
+        }
+
+        static bool IsFisheyeCenterValid(Vector3 viewPosition, Vector4 fisheyeParams2)
+        {
+            float rxy = new Vector2(viewPosition.x, viewPosition.y).magnitude;
+            float theta = Mathf.Atan2(rxy, -viewPosition.z);
+            return theta <= fisheyeParams2.y - 0.01f && viewPosition.sqrMagnitude >= 0.0001f;
+        }
+
+        static Vector2 ProjectFisheyeCenter(Vector3 viewPosition, Vector4 fisheyeParams, Vector4 fisheyeParams2)
+        {
+            float rxy = new Vector2(viewPosition.x, viewPosition.y).magnitude;
+            float negZ = -viewPosition.z;
+            float theta = Mathf.Atan2(rxy, negZ);
+            float gTheta = fisheyeParams.y * Mathf.Tan(theta * fisheyeParams.z);
+            float fisheyeScale = rxy > 1e-4f ? gTheta / rxy : negZ > 0.0f ? 1.0f / negZ : 0.0f;
+            return new Vector2(
+                fisheyeParams.w * fisheyeScale * viewPosition.x,
+                -fisheyeParams2.x * fisheyeScale * viewPosition.y);
         }
 
         static string Format(float value)
@@ -524,7 +578,7 @@ namespace GaussianSplatting.Runtime
         }
 
         static Texture2D RenderEyeCamera(Camera source, EyePose eyePose, int width, int height,
-            Color backgroundColor)
+            Color backgroundColor, float stereoEyeSign)
         {
             RenderTexture target = RenderTexture.GetTemporary(width, height, 24, RenderTextureFormat.ARGB32,
                 RenderTextureReadWrite.sRGB);
@@ -532,8 +586,10 @@ namespace GaussianSplatting.Runtime
 
             var go = new GameObject("Gaussian Splat Stereo Eye");
             var eyeCamera = go.AddComponent<Camera>();
+            float previousOverride = Shader.GetGlobalFloat(GaussianSplatRenderer.Props.GaussianStereoEyeSignOverride);
             try
             {
+                Shader.SetGlobalFloat(GaussianSplatRenderer.Props.GaussianStereoEyeSignOverride, stereoEyeSign);
                 eyeCamera.CopyFrom(source);
                 eyeCamera.enabled = false;
                 eyeCamera.stereoTargetEye = StereoTargetEyeMask.None;
@@ -556,6 +612,7 @@ namespace GaussianSplatting.Runtime
             }
             finally
             {
+                Shader.SetGlobalFloat(GaussianSplatRenderer.Props.GaussianStereoEyeSignOverride, previousOverride);
                 Object.Destroy(go);
                 RenderTexture.ReleaseTemporary(target);
             }

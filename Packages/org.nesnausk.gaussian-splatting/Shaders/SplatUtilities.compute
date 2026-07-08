@@ -47,6 +47,11 @@ float4 _VecScreenParams;
 float4 _VecWorldSpaceCameraPos;
 float4 _FisheyeParams; // x=strength, y=k, z=1/k, w=projection scale x
 float4 _FisheyeParams2; // x=projection scale y, y=max theta
+float _StereoIpdMeters;
+float _StereoConvergenceDistance;
+float _StereoScale;
+float _StereoRadialCompression;
+float _StereoMaxShift;
 int _SelectionMode;
 
 RWStructuredBuffer<uint> _SplatSortDistances;
@@ -233,35 +238,49 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
     if (_FisheyeParams.x > 0.0001)
     {
-        float k = _FisheyeParams.y;
-        float invK = _FisheyeParams.z;
-        float projMat00 = _FisheyeParams.w;
-        float projMat11 = _FisheyeParams2.x;
-        float maxTheta = _FisheyeParams2.y;
-
-        float rxy = length(centerViewPos.xy);
         float negZ = -centerViewPos.z;
-        float theta = atan2(rxy, negZ);
-
-        if (theta > maxTheta - 0.01 || dot(centerViewPos, centerViewPos) < 0.0001)
+        if (!IsFisheyeCenterValid(centerViewPos, _FisheyeParams2))
         {
             centerClipPos.w = 0;
         }
         else
         {
-            float tk = theta * invK;
-            float sinTk, cosTk;
-            sincos(tk, sinTk, cosTk);
-            float gTheta = k * sinTk / cosTk;
-            float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
-            float2 ndc = float2(projMat00 * fisheyeS * centerViewPos.x, projMat11 * fisheyeS * centerViewPos.y);
+            float2 centerCyclopean = ProjectFisheyeCenter(centerViewPos, _FisheyeParams, _FisheyeParams2);
+            float disparity = 0.0;
+            if (_StereoIpdMeters > 0.0001 && _StereoScale > 0.0 && _StereoMaxShift > 0.0)
+            {
+                float halfIpd = _StereoIpdMeters * 0.5;
+                float3 virtualLeftPos = centerViewPos + float3(halfIpd, 0.0, 0.0);
+                float3 virtualRightPos = centerViewPos - float3(halfIpd, 0.0, 0.0);
+                if (IsFisheyeCenterValid(virtualLeftPos, _FisheyeParams2) &&
+                    IsFisheyeCenterValid(virtualRightPos, _FisheyeParams2))
+                {
+                    float2 leftRaw = ProjectFisheyeCenter(virtualLeftPos, _FisheyeParams, _FisheyeParams2);
+                    float2 rightRaw = ProjectFisheyeCenter(virtualRightPos, _FisheyeParams, _FisheyeParams2);
+                    float disparityRaw = 0.5 * (leftRaw.x - rightRaw.x);
+
+                    float convergence = max(_StereoConvergenceDistance, 0.01);
+                    float3 convergenceLeft = float3(halfIpd, 0.0, -convergence);
+                    float3 convergenceRight = float3(-halfIpd, 0.0, -convergence);
+                    float2 convergenceLeftRaw = ProjectFisheyeCenter(convergenceLeft, _FisheyeParams, _FisheyeParams2);
+                    float2 convergenceRightRaw = ProjectFisheyeCenter(convergenceRight, _FisheyeParams, _FisheyeParams2);
+                    float convergenceDisparity = 0.5 * (convergenceLeftRaw.x - convergenceRightRaw.x);
+
+                    float radiusSquared = dot(centerCyclopean, centerCyclopean);
+                    float radialWeight = rcp(1.0 + max(_StereoRadialCompression, 0.0) * radiusSquared);
+                    disparity = clamp(_StereoScale * radialWeight * (disparityRaw - convergenceDisparity),
+                        -_StereoMaxShift, _StereoMaxShift);
+                }
+            }
+
             float nearPlane = _ProjectionParams.y;
             float farPlane = _ProjectionParams.z;
             float depthNdc = saturate((negZ - nearPlane) / max(farPlane - nearPlane, 1e-6));
             #if defined(UNITY_REVERSED_Z)
                 depthNdc = 1.0 - depthNdc;
             #endif
-            centerClipPos = float4(ndc.x, -ndc.y, depthNdc, 1.0);
+            centerClipPos = float4(centerCyclopean, depthNdc, 1.0);
+            view.stereoDisparity = disparity;
         }
     }
 

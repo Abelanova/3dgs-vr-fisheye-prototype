@@ -39,10 +39,11 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         yield return null;
         yield return null;
 
-        yield return CaptureCase("01_fov120_fish045_center", 120.0f, 0.45f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("02_fov170_fish090_center", 170.0f, 0.90f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("03_fov220_fish100_center", 220.0f, 1.00f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("04_fov220_fish100_moved_yaw", 220.0f, 1.00f, new Vector3(0.25f, 0.0f, 0.35f), Quaternion.Euler(0.0f, 25.0f, 0.0f));
+        yield return CaptureCase("01_fov120_fish020_center", 120.0f, 0.20f, Vector3.zero, Quaternion.identity);
+        yield return CaptureCase("02_fov150_fish030_center", 150.0f, 0.30f, Vector3.zero, Quaternion.identity);
+        yield return CaptureCase("03_fov170_fish040_center", 170.0f, 0.40f, Vector3.zero, Quaternion.identity);
+        yield return CaptureCase("04_fov190_fish060_center", 190.0f, 0.60f, Vector3.zero, Quaternion.identity);
+        yield return CaptureCase("05_fov220_fish100_center", 220.0f, 1.00f, Vector3.zero, Quaternion.identity);
 
 #if UNITY_EDITOR
         Debug.Log("Direct fisheye VR capture run complete.");
@@ -89,6 +90,11 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         targetSplat.m_SortNthFrame = 1;
         targetSplat.m_FisheyeFieldOfView = fov;
         targetSplat.m_FisheyeStrength = Mathf.Clamp01(fisheye);
+        targetSplat.m_StereoIpdMeters = IpdMeters;
+        targetSplat.m_StereoConvergenceDistance = 2.0f;
+        targetSplat.m_StereoScale = 0.25f;
+        targetSplat.m_StereoRadialCompression = 2.0f;
+        targetSplat.m_StereoMaxShift = 0.004f;
     }
 
     static void ApplyMockHeadPose(Vector3 headOffset, Quaternion headRotation, float fov)
@@ -176,6 +182,10 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
             $"eyeMatrixDelta={eyeMatrixDelta:F5}\n" +
             $"fov={fov:F1}\n" +
             $"fisheye={fisheye:F2}\n" +
+            $"stereoScale={(targetSplat != null ? targetSplat.m_StereoScale : 0.0f):F3}\n" +
+            $"stereoRadialCompression={(targetSplat != null ? targetSplat.m_StereoRadialCompression : 0.0f):F3}\n" +
+            $"stereoMaxShift={(targetSplat != null ? targetSplat.m_StereoMaxShift : 0.0f):F3}\n" +
+            $"stereoConvergenceMeters={(targetSplat != null ? targetSplat.m_StereoConvergenceDistance : 0.0f):F3}\n" +
             $"headOffset={headOffset.x:F3},{headOffset.y:F3},{headOffset.z:F3}\n" +
             $"headRotationEuler={headRotation.eulerAngles.x:F2},{headRotation.eulerAngles.y:F2},{headRotation.eulerAngles.z:F2}\n");
     }
