@@ -15,8 +15,11 @@ This project branch validates the direct covariance fisheye path, not the cubema
 Use one of these stereo sources:
 
 - A real OpenXR headset.
-- Unity Mock HMD if installed in the project.
 - OpenXR Mock Runtime from `Project Settings > XR Plug-in Management > OpenXR > Features` for editor-only validation.
+- Unity Mock HMD if installed in the project.
+
+This project enables the OpenXR Mock Runtime for the Standalone editor target so the automated capture can drive a
+repeatable HMD-style stereo pose without adding another package.
 
 The XR Interaction Simulator only drives simulated HMD/controller poses. It does not prove stereo by itself. The validation overlay must show stereo ON and a non-zero IPD before a no-ghosting result means anything for a headset.
 
@@ -51,6 +54,20 @@ Use the projection panel or controller bindings and test:
 - FOV `180+`, fisheye `0.85-1.0`.
 
 Watch the edge of the view for splats that smear into long lines, flip orientation, or cover a large part of the eye. The overlay's `Fisheye stretch probe` is a projection-level warning; it does not replace visual inspection of the actual splat asset.
+
+## Stereo Diagnostic Capture Outputs
+
+Run `Tools > VR Preview > Capture Direct Fisheye VR Validation`.
+
+For each fixed head pose and projection case, the capture writes:
+
+- `*_stereo_pair.png`: left and right eye images side by side.
+- `*_stereo_pair_left.png` and `*_stereo_pair_right.png`: separate per-eye images from the same head pose.
+- `*_stereo_pair_overlay_50.png`: 50% alpha left/right overlay in the same per-eye coordinate frame.
+- `*_stereo_pair_anaglyph_red_cyan.png`: left eye in red, right eye in cyan.
+- `*_stereo_pair_feature_disparity.csv` and `.txt`: fixed 3D feature measurements with `delta_x = xL - xR` and `delta_y = yL - yR`.
+
+The measured probes are scene-bounds based: center, left edge, right edge, nearest ground-side corner, and farthest target corner. Pixel coordinates use the top-left of each per-eye image as the origin.
 
 ## Failure Interpretation
 

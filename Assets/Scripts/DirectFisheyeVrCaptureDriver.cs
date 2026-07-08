@@ -61,14 +61,14 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         string path = Path.Combine(ResolveOutputDirectory(), caseName + ".png");
         ScreenCapture.CaptureScreenshot(path);
         string stereoPath = Path.Combine(ResolveOutputDirectory(), caseName + "_stereo_pair.png");
-        if (GaussianSplatStereoCapture.WriteStereoPair(targetCamera, stereoPath,
+        if (GaussianSplatStereoCapture.WriteStereoDiagnostics(targetCamera, targetSplat, stereoPath,
                 new Color(0.74f, 0.52f, 0.40f, 1.0f), headOffset, headRotation, out string stereoMessage))
         {
-            Debug.Log($"Direct fisheye VR stereo pair wrote {stereoPath}: {stereoMessage}");
+            Debug.Log($"Direct fisheye VR stereo diagnostics wrote {stereoPath}: {stereoMessage}");
         }
         else
         {
-            Debug.LogWarning($"Direct fisheye VR stereo pair failed for {caseName}: {stereoMessage}");
+            Debug.LogWarning($"Direct fisheye VR stereo diagnostics failed for {caseName}: {stereoMessage}");
         }
 
         WriteMetrics(caseName, fov, fisheye, headOffset, headRotation);
