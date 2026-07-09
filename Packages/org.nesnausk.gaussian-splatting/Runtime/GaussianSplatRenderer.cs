@@ -263,7 +263,7 @@ namespace GaussianSplatting.Runtime
         [Min(0.01f)] [Tooltip("Distance in meters where shared fisheye stereo converges to near-zero horizontal disparity.")]
         public float m_StereoConvergenceDistance = 2.0f;
         [Range(0.0f, 1.0f)] [Tooltip("Scales the geometry-informed horizontal fisheye stereo disparity.")]
-        public float m_StereoScale = 0.25f;
+        public float m_StereoScale = 0.35f;
         [Min(0.0f)] [Tooltip("Reduces stereo disparity toward the fisheye edges using 1 / (1 + lambda * radius squared).")]
         public float m_StereoRadialCompression = 2.0f;
         [Range(0.0f, 0.1f)] [Tooltip("Maximum per-eye horizontal shift in NDC for shared fisheye stereo.")]

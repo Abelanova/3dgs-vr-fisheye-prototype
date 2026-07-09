@@ -44,27 +44,33 @@ Test both paths if the active XR provider exposes them:
 
 This branch forces per-eye splat sorting in both modes. If one mode fails and the other passes, inspect the URP render target slice/composite path first.
 
-## High FOV / Fisheye Stress Matrix
+## Soft-Saturation Baseline
 
-Use the projection panel or controller bindings and test:
+Keep the first comparison fixed to one configuration:
 
 - FOV `120`, fisheye `0.20`.
-- FOV `150`, fisheye `0.30`.
-- FOV `170`, fisheye `0.40`.
-- FOV `190`, fisheye `0.60`.
-- FOV `220`, fisheye `1.00`.
-
-Start with shared stereo settings:
-
 - Stereo Scale `0.25`.
 - Max Per-Eye Shift `0.004` NDC.
 - Radial Compression `2.0`.
 - Convergence `2.0 m`.
 
-Keep these settings until dense diagnostics reach the fusion targets below. Only then increase depth gradually:
+The preserved hard-clamp result is named `baseline_hardclamp_scale025`. The current soft-saturation result is named `softclamp_scale025`. Soft saturation uses:
+
+`normalized = stereoScale * weightedRawDisparity / max(maxShift, 1e-5)`
+
+`safeDisparity = maxShift * normalized / (1 + abs(normalized))`
+
+Do not test wider FOV or change another stereo parameter until dense flow confirms that the soft-saturation result does not increase vertical disparity or warp residual.
+
+After that comparison passes, keep every other parameter fixed and increase only Stereo Scale:
 
 - Stereo Scale `0.25 -> 0.35 -> 0.50`.
-- Max Per-Eye Shift `0.004 -> 0.006 -> 0.008`.
+
+The current engineering default is Stereo Scale `0.35`. Dynamic validation captures five
+fixed poses named `dynamic_scale035_center`, `dynamic_scale035_yaw_left10`,
+`dynamic_scale035_yaw_right10`, `dynamic_scale035_translate_left05m`, and
+`dynamic_scale035_translate_right05m`. Every pose keeps FOV `120`, fisheye `0.20`,
+Radial Compression `2.0`, Max Per-Eye Shift `0.004` NDC, and Convergence `2.0 m`.
 
 Watch the edge of the view for splats that smear into long lines, flip orientation, or cover a large part of the eye. The overlay's `Fisheye stretch probe` is a projection-level warning; it does not replace visual inspection of the actual splat asset.
 

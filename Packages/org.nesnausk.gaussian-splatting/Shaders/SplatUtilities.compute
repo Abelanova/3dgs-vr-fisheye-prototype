@@ -268,8 +268,11 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
                     float radiusSquared = dot(centerCyclopean, centerCyclopean);
                     float radialWeight = rcp(1.0 + max(_StereoRadialCompression, 0.0) * radiusSquared);
-                    disparity = clamp(_StereoScale * radialWeight * (disparityRaw - convergenceDisparity),
-                        -_StereoMaxShift, _StereoMaxShift);
+                    float weightedRawDisparity = radialWeight * (disparityRaw - convergenceDisparity);
+                    float normalizedDisparity = _StereoScale * weightedRawDisparity /
+                        max(_StereoMaxShift, 1e-5);
+                    disparity = _StereoMaxShift * normalizedDisparity /
+                        (1.0 + abs(normalizedDisparity));
                 }
             }
 

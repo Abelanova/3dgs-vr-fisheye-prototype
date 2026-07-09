@@ -18,13 +18,33 @@ namespace GaussianSplatting.Runtime
         public static bool WriteStereoDiagnostics(Camera camera, GaussianSplatRenderer splat, string path,
             Color backgroundColor, Vector3 headOffset, Quaternion headRotation, out string message)
         {
-            message = string.Empty;
             if (camera == null)
             {
                 message = "Camera is missing.";
                 return false;
             }
 
+            EyePose centerPose = GetEyePose(camera, 0.0f, headOffset, headRotation);
+            return WriteStereoDiagnostics(camera, splat, path, backgroundColor, centerPose, out message);
+        }
+
+        public static bool WriteStereoDiagnosticsAtPose(Camera camera, GaussianSplatRenderer splat, string path,
+            Color backgroundColor, Vector3 centerPosition, Quaternion centerRotation, out string message)
+        {
+            if (camera == null)
+            {
+                message = "Camera is missing.";
+                return false;
+            }
+
+            return WriteStereoDiagnostics(camera, splat, path, backgroundColor,
+                new EyePose(centerPosition, centerRotation), out message);
+        }
+
+        static bool WriteStereoDiagnostics(Camera camera, GaussianSplatRenderer splat, string path,
+            Color backgroundColor, EyePose centerPose, out string message)
+        {
+            message = string.Empty;
             int width = XRSettings.eyeTextureWidth > 0 ? XRSettings.eyeTextureWidth : Mathf.Max(camera.pixelWidth, 512);
             int height = XRSettings.eyeTextureHeight > 0 ? XRSettings.eyeTextureHeight : Mathf.Max(camera.pixelHeight, 512);
             if (width <= 0 || height <= 0)
@@ -34,7 +54,6 @@ namespace GaussianSplatting.Runtime
             }
 
             float ipd = GetIpd(camera);
-            EyePose centerPose = GetEyePose(camera, 0.0f, headOffset, headRotation);
             Texture2D left = RenderEyeCamera(camera, centerPose, width, height, backgroundColor, 1.0f);
             Texture2D right = RenderEyeCamera(camera, centerPose, width, height, backgroundColor, -1.0f);
 
@@ -405,9 +424,11 @@ namespace GaussianSplatting.Runtime
             Vector2 centerCyclopean = ProjectFisheyeCenter(viewPosition, fisheyeParams, fisheyeParams2);
             float radialWeight = 1.0f /
                 (1.0f + Mathf.Max(splat.m_StereoRadialCompression, 0.0f) * centerCyclopean.sqrMagnitude);
-            return Mathf.Clamp(splat.m_StereoScale * radialWeight *
-                (disparityRaw - convergenceDisparity),
-                -splat.m_StereoMaxShift, splat.m_StereoMaxShift);
+            float weightedRawDisparity = radialWeight * (disparityRaw - convergenceDisparity);
+            float normalizedDisparity = splat.m_StereoScale * weightedRawDisparity /
+                Mathf.Max(splat.m_StereoMaxShift, 1e-5f);
+            return splat.m_StereoMaxShift * normalizedDisparity /
+                (1.0f + Mathf.Abs(normalizedDisparity));
         }
 
         static bool IsFisheyeCenterValid(Vector3 viewPosition, Vector4 fisheyeParams2)

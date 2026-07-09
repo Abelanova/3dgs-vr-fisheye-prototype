@@ -21,6 +21,8 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
 
     const float IpdMeters = 0.064f;
     readonly WaitForEndOfFrame waitForEndOfFrame = new();
+    Vector3 baseHeadPosition;
+    Quaternion baseHeadRotation;
 
     void Awake()
     {
@@ -39,11 +41,24 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         yield return null;
         yield return null;
 
-        yield return CaptureCase("01_fov120_fish020_center", 120.0f, 0.20f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("02_fov150_fish030_center", 150.0f, 0.30f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("03_fov170_fish040_center", 170.0f, 0.40f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("04_fov190_fish060_center", 190.0f, 0.60f, Vector3.zero, Quaternion.identity);
-        yield return CaptureCase("05_fov220_fish100_center", 220.0f, 1.00f, Vector3.zero, Quaternion.identity);
+        ApplyMockHeadPose(Vector3.zero, Quaternion.identity, 120.0f);
+        yield return null;
+        if (!Application.isBatchMode)
+            yield return waitForEndOfFrame;
+
+        baseHeadPosition = targetCamera.transform.position;
+        baseHeadRotation = targetCamera.transform.rotation;
+
+        yield return CaptureCase("dynamic_scale035_center", 120.0f, 0.20f,
+            Vector3.zero, Quaternion.identity);
+        yield return CaptureCase("dynamic_scale035_yaw_left10", 120.0f, 0.20f,
+            Vector3.zero, Quaternion.Euler(0.0f, -10.0f, 0.0f));
+        yield return CaptureCase("dynamic_scale035_yaw_right10", 120.0f, 0.20f,
+            Vector3.zero, Quaternion.Euler(0.0f, 10.0f, 0.0f));
+        yield return CaptureCase("dynamic_scale035_translate_left05m", 120.0f, 0.20f,
+            Vector3.left * 0.05f, Quaternion.identity);
+        yield return CaptureCase("dynamic_scale035_translate_right05m", 120.0f, 0.20f,
+            Vector3.right * 0.05f, Quaternion.identity);
 
 #if UNITY_EDITOR
         Debug.Log("Direct fisheye VR capture run complete.");
@@ -57,13 +72,17 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         ApplyMockHeadPose(headOffset, headRotation, fov);
 
         yield return null;
-        yield return waitForEndOfFrame;
+        if (!Application.isBatchMode)
+            yield return waitForEndOfFrame;
 
         string path = Path.Combine(ResolveOutputDirectory(), caseName + ".png");
         ScreenCapture.CaptureScreenshot(path);
         string stereoPath = Path.Combine(ResolveOutputDirectory(), caseName + "_stereo_pair.png");
-        if (GaussianSplatStereoCapture.WriteStereoDiagnostics(targetCamera, targetSplat, stereoPath,
-                new Color(0.74f, 0.52f, 0.40f, 1.0f), headOffset, headRotation, out string stereoMessage))
+        Vector3 diagnosticPosition = baseHeadPosition + baseHeadRotation * headOffset;
+        Quaternion diagnosticRotation = baseHeadRotation * headRotation;
+        if (GaussianSplatStereoCapture.WriteStereoDiagnosticsAtPose(targetCamera, targetSplat, stereoPath,
+                new Color(0.74f, 0.52f, 0.40f, 1.0f), diagnosticPosition, diagnosticRotation,
+                out string stereoMessage))
         {
             Debug.Log($"Direct fisheye VR stereo diagnostics wrote {stereoPath}: {stereoMessage}");
         }
@@ -76,7 +95,8 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         Debug.Log($"Direct fisheye VR capture wrote {path}");
 
         yield return null;
-        yield return waitForEndOfFrame;
+        if (!Application.isBatchMode)
+            yield return waitForEndOfFrame;
     }
 
     void ApplyProjection(float fov, float fisheye)
@@ -92,7 +112,7 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
         targetSplat.m_FisheyeStrength = Mathf.Clamp01(fisheye);
         targetSplat.m_StereoIpdMeters = IpdMeters;
         targetSplat.m_StereoConvergenceDistance = 2.0f;
-        targetSplat.m_StereoScale = 0.25f;
+        targetSplat.m_StereoScale = 0.35f;
         targetSplat.m_StereoRadialCompression = 2.0f;
         targetSplat.m_StereoMaxShift = 0.004f;
     }
@@ -182,12 +202,16 @@ public sealed class DirectFisheyeVrCaptureDriver : MonoBehaviour
             $"eyeMatrixDelta={eyeMatrixDelta:F5}\n" +
             $"fov={fov:F1}\n" +
             $"fisheye={fisheye:F2}\n" +
+            "stereoSaturation=soft\n" +
             $"stereoScale={(targetSplat != null ? targetSplat.m_StereoScale : 0.0f):F3}\n" +
             $"stereoRadialCompression={(targetSplat != null ? targetSplat.m_StereoRadialCompression : 0.0f):F3}\n" +
             $"stereoMaxShift={(targetSplat != null ? targetSplat.m_StereoMaxShift : 0.0f):F3}\n" +
             $"stereoConvergenceMeters={(targetSplat != null ? targetSplat.m_StereoConvergenceDistance : 0.0f):F3}\n" +
             $"headOffset={headOffset.x:F3},{headOffset.y:F3},{headOffset.z:F3}\n" +
-            $"headRotationEuler={headRotation.eulerAngles.x:F2},{headRotation.eulerAngles.y:F2},{headRotation.eulerAngles.z:F2}\n");
+            $"headRotationEuler={headRotation.eulerAngles.x:F2},{headRotation.eulerAngles.y:F2},{headRotation.eulerAngles.z:F2}\n" +
+            $"diagnosticPosition={baseHeadPosition.x + (baseHeadRotation * headOffset).x:F3}," +
+            $"{baseHeadPosition.y + (baseHeadRotation * headOffset).y:F3}," +
+            $"{baseHeadPosition.z + (baseHeadRotation * headOffset).z:F3}\n");
     }
 
     string ResolveOutputDirectory()

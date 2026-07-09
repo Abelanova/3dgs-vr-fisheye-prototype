@@ -56,7 +56,7 @@ public static class DirectFisheyeVrValidationSetup
         splat.m_FisheyeStrength = Mathf.Max(splat.m_FisheyeStrength, 0.45f);
         splat.m_StereoIpdMeters = 0.064f;
         splat.m_StereoConvergenceDistance = 2.0f;
-        splat.m_StereoScale = 0.25f;
+        splat.m_StereoScale = 0.35f;
         splat.m_StereoRadialCompression = 2.0f;
         splat.m_StereoMaxShift = 0.004f;
         splat.m_MinPixelSize = Mathf.Max(splat.m_MinPixelSize, 0.75f);
