@@ -109,6 +109,16 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.FindProperty("splat").objectReferenceValue = splat;
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
+        var xrProjectionController = cameraObject.AddComponent<XRProjectionController>();
+        var xrProjectionControllerSo = new SerializedObject(xrProjectionController);
+        xrProjectionControllerSo.FindProperty("fovController").objectReferenceValue = fovController;
+        xrProjectionControllerSo.FindProperty("splat").objectReferenceValue = splat;
+        xrProjectionControllerSo.FindProperty("rigRoot").objectReferenceValue = originObject.transform;
+        xrProjectionControllerSo.FindProperty("xrCamera").objectReferenceValue = camera;
+        xrProjectionControllerSo.FindProperty("defaultFov").floatValue = 120.0f;
+        xrProjectionControllerSo.FindProperty("defaultFisheye").floatValue = 0.20f;
+        xrProjectionControllerSo.ApplyModifiedPropertiesWithoutUndo();
+
         AddDirectFisheyeDiagnostics(cameraObject, camera, splat);
         CreateProjectionPanel(camera, fovController, splat);
         CreateSimulator(cameraObject.transform, leftController.transform, rightController.transform);

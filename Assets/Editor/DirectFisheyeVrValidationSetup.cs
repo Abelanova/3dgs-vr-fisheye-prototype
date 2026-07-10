@@ -53,7 +53,7 @@ public static class DirectFisheyeVrValidationSetup
         Undo.RecordObject(splat, "Configure Direct Fisheye Splat");
         splat.m_SortNthFrame = 1;
         splat.m_FisheyeFieldOfView = Mathf.Max(splat.m_FisheyeFieldOfView, 120.0f);
-        splat.m_FisheyeStrength = Mathf.Max(splat.m_FisheyeStrength, 0.45f);
+        splat.m_FisheyeStrength = 0.20f;
         splat.m_StereoIpdMeters = 0.064f;
         splat.m_StereoConvergenceDistance = 2.0f;
         splat.m_StereoScale = 0.35f;
@@ -90,8 +90,10 @@ public static class DirectFisheyeVrValidationSetup
         SetObjectReferenceIfPresent(so, "splat", splat);
         SetObjectReferenceIfPresent(so, "xrCamera", camera);
         SetObjectReferenceIfPresent(so, "rigRoot", RootOf(camera.transform));
+        SetFloatIfPresent(so, "moveSpeed", 0.80f);
+        SetFloatIfPresent(so, "verticalSpeed", 0.80f);
         SetFloatIfPresent(so, "defaultFov", 120.0f);
-        SetFloatIfPresent(so, "defaultFisheye", 0.45f);
+        SetFloatIfPresent(so, "defaultFisheye", 0.20f);
         SetBoolIfPresent(so, "applyDefaultsOnStart", true);
         so.ApplyModifiedPropertiesWithoutUndo();
     }

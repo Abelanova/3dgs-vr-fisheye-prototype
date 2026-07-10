@@ -10,15 +10,18 @@ public sealed class XRProjectionController : MonoBehaviour
     [SerializeField] Transform rigRoot;
     [SerializeField] Camera xrCamera;
     [SerializeField] float moveSpeed = 0.8f;
+    [SerializeField] float verticalSpeed = 0.8f;
     [SerializeField] float deadZone = 0.18f;
     [SerializeField] float fovStepPerSecond = 35.0f;
     [SerializeField] float fisheyeStepPerSecond = 0.35f;
     [SerializeField] float defaultFov = 120.0f;
-    [SerializeField, Range(0.0f, 1.0f)] float defaultFisheye = 0.45f;
+    [SerializeField, Range(0.0f, 1.0f)] float defaultFisheye = 0.20f;
     [SerializeField] bool applyDefaultsOnStart = true;
 
     readonly List<InputDevice> rightHandDevices = new();
+    readonly List<InputDevice> leftHandDevices = new();
     InputDevice rightHand;
+    InputDevice leftHand;
     bool defaultsApplied;
 
     void Awake()
@@ -35,15 +38,19 @@ public sealed class XRProjectionController : MonoBehaviour
     void Update()
     {
         ResolveTargets();
-        if (!TryGetRightHand(out InputDevice device))
-            return;
-
         float dt = Time.unscaledDeltaTime;
-        ApplyThumbstickMovement(device, dt);
-        ApplyProjectionButtons(device, dt);
+        if (TryGetRightHand(out InputDevice rightDevice))
+        {
+            ApplyThumbstickMovement(rightDevice, dt);
+            ApplyVerticalMovement(rightDevice, dt);
+        }
 
-        if (ReadButton(device, CommonUsages.primary2DAxisClick))
-            ApplyDefaults();
+        if (TryGetLeftHand(out InputDevice leftDevice))
+        {
+            ApplyProjectionThumbstick(leftDevice, dt);
+            if (ReadButton(leftDevice, CommonUsages.primary2DAxisClick))
+                ApplyDefaults();
+        }
     }
 
     void ApplyDefaults()
@@ -75,28 +82,35 @@ public sealed class XRProjectionController : MonoBehaviour
         target.position += delta;
     }
 
-    void ApplyProjectionButtons(InputDevice device, float dt)
+    void ApplyVerticalMovement(InputDevice device, float dt)
     {
-        float fisheyeDelta = 0.0f;
+        float vertical = 0.0f;
         if (ReadButton(device, CommonUsages.secondaryButton))
-            fisheyeDelta -= 1.0f;
+            vertical -= 1.0f;
         if (ReadButton(device, CommonUsages.primaryButton))
-            fisheyeDelta += 1.0f;
+            vertical += 1.0f;
 
-        if (Mathf.Abs(fisheyeDelta) > 0.0f)
-            ApplyFisheyeToActiveSplats(CurrentFisheye() + fisheyeDelta * fisheyeStepPerSecond * dt);
-
-        if (fovController == null)
+        if (Mathf.Abs(vertical) <= 0.0f)
             return;
 
-        float fovDelta = 0.0f;
-        if (ReadButton(device, CommonUsages.gripButton))
-            fovDelta -= 1.0f;
-        if (ReadButton(device, CommonUsages.triggerButton))
-            fovDelta += 1.0f;
+        Transform target = rigRoot != null ? rigRoot : transform;
+        target.position += Vector3.up * (vertical * verticalSpeed * dt);
+    }
 
-        if (Mathf.Abs(fovDelta) > 0.0f)
-            fovController.verticalFieldOfView += fovDelta * fovStepPerSecond * dt;
+    void ApplyProjectionThumbstick(InputDevice device, float dt)
+    {
+        if (!device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 axis))
+            return;
+
+        float fisheyeInput = Mathf.Abs(axis.x) >= deadZone ? axis.x : 0.0f;
+        float fovInput = Mathf.Abs(axis.y) >= deadZone ? axis.y : 0.0f;
+
+        if (Mathf.Abs(fisheyeInput) > 0.0f)
+            ApplyFisheyeToActiveSplats(CurrentFisheye() +
+                fisheyeInput * fisheyeStepPerSecond * dt);
+
+        if (fovController != null && Mathf.Abs(fovInput) > 0.0f)
+            fovController.verticalFieldOfView += fovInput * fovStepPerSecond * dt;
     }
 
     static bool ReadButton(InputDevice device, InputFeatureUsage<bool> usage) =>
@@ -119,6 +133,30 @@ public sealed class XRProjectionController : MonoBehaviour
         {
             rightHand = rightHandDevices[0];
             device = rightHand;
+            return true;
+        }
+
+        device = default;
+        return false;
+    }
+
+    bool TryGetLeftHand(out InputDevice device)
+    {
+        if (leftHand.isValid)
+        {
+            device = leftHand;
+            return true;
+        }
+
+        leftHandDevices.Clear();
+        InputDevices.GetDevicesWithCharacteristics(
+            InputDeviceCharacteristics.Left | InputDeviceCharacteristics.Controller,
+            leftHandDevices);
+
+        if (leftHandDevices.Count > 0)
+        {
+            leftHand = leftHandDevices[0];
+            device = leftHand;
             return true;
         }
 

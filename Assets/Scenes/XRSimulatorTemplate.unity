@@ -2322,7 +2322,7 @@ MonoBehaviour:
   m_SHOnly: 0
   m_SortNthFrame: 1
   m_FisheyeFieldOfView: 120
-  m_FisheyeStrength: 0.45
+  m_FisheyeStrength: 0.2
   m_RenderMode: 0
   m_PointDisplaySize: 3
   m_Cutouts: []
@@ -3598,7 +3598,7 @@ MonoBehaviour:
   fovStepPerSecond: 35
   fisheyeStepPerSecond: 0.35
   defaultFov: 120
-  defaultFisheye: 0.45
+  defaultFisheye: 0.2
 --- !u!114 &2120157586
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3838,11 +3838,12 @@ MonoBehaviour:
   rigRoot: {fileID: 1535188903}
   xrCamera: {fileID: 2120157587}
   moveSpeed: 0.8
+  verticalSpeed: 0.8
   deadZone: 0.18
   fovStepPerSecond: 35
   fisheyeStepPerSecond: 0.35
   defaultFov: 120
-  defaultFisheye: 0.45
+  defaultFisheye: 0.2
   applyDefaultsOnStart: 1
 --- !u!114 &2120157593
 MonoBehaviour:

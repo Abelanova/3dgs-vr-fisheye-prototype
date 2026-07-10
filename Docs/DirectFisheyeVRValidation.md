@@ -72,6 +72,25 @@ fixed poses named `dynamic_scale035_center`, `dynamic_scale035_yaw_left10`,
 `dynamic_scale035_translate_right05m`. Every pose keeps FOV `120`, fisheye `0.20`,
 Radial Compression `2.0`, Max Per-Eye Shift `0.004` NDC, and Convergence `2.0 m`.
 
+## XR Controller Mapping
+
+- Right thumbstick: move forward/backward and strafe relative to the HMD heading.
+- Right A/B: move the XR Origin up/down.
+- Left thumbstick X: decrease/increase fisheye strength.
+- Left thumbstick Y: decrease/increase FOV.
+- Left thumbstick click: reset to FOV `120` and fisheye `0.20`.
+
+Trigger and grip remain available for UI interaction. Stereo Scale remains `0.35`.
+
+## Fisheye 0.70 Fusion Check
+
+The fixed center-pose HMD Mock check at FOV `120`, fisheye `0.70`, and Stereo Scale
+`0.35` remained predominantly horizontal. Using the same OpenCV DIS flow settings
+for both captures, fisheye `0.20 -> 0.70` changed global `|dx|` P95 from
+`4.658 -> 4.679 px`, global `|dy|` P95 from `0.400 -> 0.382 px`, and normalized
+warp residual from `0.00375 -> 0.00343`. This supports fusion at the tested center
+pose, but does not remove the separate high-fisheye covariance and popping risks.
+
 Watch the edge of the view for splats that smear into long lines, flip orientation, or cover a large part of the eye. The overlay's `Fisheye stretch probe` is a projection-level warning; it does not replace visual inspection of the actual splat asset.
 
 ## Shared Fisheye Stereo Model
