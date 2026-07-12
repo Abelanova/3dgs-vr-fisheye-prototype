@@ -9,38 +9,72 @@ public static class ChatGPTPerEyeShaderPatcher
 {
     const string ComputePath = "Packages/org.nesnausk.gaussian-splatting/Shaders/SplatUtilities.compute";
     const string HlslPath = "Packages/org.nesnausk.gaussian-splatting/Shaders/GaussianSplatting.hlsl";
-    const string Marker = "CHATGPT_PEREYE_MATRIX_PATCH";
+    const string RuntimePath = "Packages/org.nesnausk.gaussian-splatting/Runtime/GaussianSplatRenderer.cs";
+
+    const string HlslMarker = "CHATGPT_PEREYE_MATRIX_PATCH";
+    const string ComputeMarker = "CHATGPT_PEREYE_CENTER_PATCH";
+    const string SortMarker = "CHATGPT_PEREYE_SORT_PATCH";
 
     static ChatGPTPerEyeShaderPatcher() => EditorApplication.delayCall += Apply;
 
-    [MenuItem("Tools/3DGS/Apply ChatGPT Per-Eye Jacobian Patch")]
+    [MenuItem("Tools/3DGS/Apply ChatGPT Per-Eye Patches")]
     public static void Apply()
     {
         try
         {
-            bool changed = PatchHlsl() | PatchCompute();
+            bool changed = PatchHlsl() | PatchCompute() | PatchRuntimeSorting();
             if (changed)
             {
                 AssetDatabase.Refresh();
-                Debug.Log("Applied ChatGPT per-eye matrix/Jacobian shader patch.");
+                Debug.Log("Applied ChatGPT per-eye center, Jacobian, and eye-specific sorting patches.");
+            }
+            else
+            {
+                Debug.Log("ChatGPT per-eye patches are already present.");
             }
         }
         catch (Exception ex)
         {
-            Debug.LogError("ChatGPT per-eye shader patch failed: " + ex);
+            Debug.LogError("ChatGPT per-eye patch failed: " + ex);
+        }
+    }
+
+    [MenuItem("Tools/3DGS/Verify ChatGPT Per-Eye Patches")]
+    public static void Verify()
+    {
+        try
+        {
+            bool hlslOk = File.Exists(HlslPath) && File.ReadAllText(HlslPath).Contains(HlslMarker);
+            bool computeOk = File.Exists(ComputePath) && File.ReadAllText(ComputePath).Contains(ComputeMarker);
+            bool sortOk = File.Exists(RuntimePath) && File.ReadAllText(RuntimePath).Contains(SortMarker);
+
+            if (hlslOk && computeOk && sortOk)
+            {
+                Debug.Log("ChatGPT per-eye verification passed: matrix-aware center projection, per-eye Jacobian, and eye-specific sorting are installed.");
+            }
+            else
+            {
+                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, Sorting={sortOk}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError("ChatGPT per-eye verification failed: " + ex);
         }
     }
 
     static bool PatchHlsl()
     {
+        RequireFile(HlslPath);
         string s = File.ReadAllText(HlslPath);
-        if (s.Contains(Marker)) return false;
+        if (s.Contains(HlslMarker))
+            return false;
 
         const string oldSignature =
             "float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,\n" +
             "    float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)";
         const string newSignature =
-            "// " + Marker + "\n" +
+            "// " + HlslMarker + "\n" +
             "float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,\n" +
             "    float4x4 matrixP, float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)";
 
@@ -73,16 +107,19 @@ public static class ChatGPTPerEyeShaderPatcher
 
     static bool PatchCompute()
     {
+        RequireFile(ComputePath);
         string s = File.ReadAllText(ComputePath);
-        if (s.Contains(Marker)) return false;
+        if (s.Contains(ComputeMarker))
+            return false;
 
         const string oldCenter =
             "            float2 ndc = float2(projMat00 * fisheyeS * centerViewPos.x, projMat11 * fisheyeS * centerViewPos.y);";
         const string newCenter =
-            "            // " + Marker + ": route the nonlinear ray through the complete per-eye projection matrix.\n" +
+            "            // " + ComputeMarker + ": route the nonlinear ray through the complete per-eye projection matrix.\n" +
             "            float2 warpedTangent = fisheyeS * centerViewPos.xy;\n" +
             "            float4 warpedClip = mul(_MatrixP, float4(warpedTangent, -1.0, 1.0));\n" +
-            "            float2 ndc = warpedClip.xy / max(abs(warpedClip.w), 1e-6);";
+            "            float safeW = abs(warpedClip.w) > 1e-6 ? warpedClip.w : (warpedClip.w >= 0.0 ? 1e-6 : -1e-6);\n" +
+            "            float2 ndc = warpedClip.xy / safeW;";
 
         const string oldCall =
             "            cov2d = CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV,\n" +
@@ -97,10 +134,58 @@ public static class ChatGPTPerEyeShaderPatcher
         return true;
     }
 
+    static bool PatchRuntimeSorting()
+    {
+        RequireFile(RuntimePath);
+        string s = File.ReadAllText(RuntimePath);
+        if (s.Contains(SortMarker))
+            return false;
+
+        const string oldDispatch =
+            "                if (updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0)\n" +
+            "                    gs.SortPoints(cmb, cam, matrix);\n" +
+            "                if (updateSortAndFrame)\n" +
+            "                    ++gs.m_FrameCounter;";
+        const string newDispatch =
+            "                // " + SortMarker + ": each stereo eye receives its own depth order.\n" +
+            "                // The shared key buffer is safe because each eye is sorted and drawn sequentially.\n" +
+            "                bool stereoEyeSort = stereoEye.HasValue;\n" +
+            "                bool scheduledMonoSort = updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0;\n" +
+            "                if (stereoEyeSort || scheduledMonoSort)\n" +
+            "                    gs.SortPoints(cmb, cam, matrix, stereoEye);\n" +
+            "                if (updateSortAndFrame)\n" +
+            "                    ++gs.m_FrameCounter;";
+
+        const string oldSignature =
+            "        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)";
+        const string newSignature =
+            "        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix,\n" +
+            "            Camera.StereoscopicEye? stereoEye = null)";
+
+        const string oldView =
+            "            Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;";
+        const string newView =
+            "            Matrix4x4 worldToCamMatrix = stereoEye.HasValue\n" +
+            "                ? cam.GetStereoViewMatrix(stereoEye.Value)\n" +
+            "                : cam.worldToCameraMatrix;";
+
+        s = ReplaceRequired(s, oldDispatch, newDispatch, "stereo sort dispatch");
+        s = ReplaceRequired(s, oldSignature, newSignature, "SortPoints signature");
+        s = ReplaceRequired(s, oldView, newView, "eye-specific sorting view matrix");
+        File.WriteAllText(RuntimePath, s);
+        return true;
+    }
+
+    static void RequireFile(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException("Required 3DGS package file was not found.", path);
+    }
+
     static string ReplaceRequired(string source, string oldText, string newText, string label)
     {
         if (!source.Contains(oldText))
-            throw new InvalidOperationException("Could not locate " + label + ". Package source may have changed.");
+            throw new InvalidOperationException("Could not locate " + label + ". Package source may have changed or the patch is partially applied.");
         return source.Replace(oldText, newText);
     }
 }
