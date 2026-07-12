@@ -250,7 +250,9 @@ public static class ChatGPTPerEyeShaderPatcher
             "                ? cam.GetStereoViewMatrix(stereoEye.Value)\n" +
             "                : cam.worldToCameraMatrix;";
 
-        if (!s.Contains(SortMarker))
+        bool hasPerEyeDispatch = s.Contains("gs.SortPoints(cmb, cam, matrix, stereoEye);") &&
+                                 s.Contains(newSignature);
+        if (!hasPerEyeDispatch)
         {
             s = ReplaceRequired(s, oldDispatch, newDispatch, "stereo sort dispatch");
             s = ReplaceRequired(s, oldSignature, newSignature, "SortPoints signature");
