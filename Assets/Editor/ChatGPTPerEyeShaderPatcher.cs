@@ -73,7 +73,7 @@ public static class ChatGPTPerEyeShaderPatcher
     static bool PatchHlslProjection()
     {
         RequireFile(HlslPath);
-        string s = File.ReadAllText(HlslPath);
+        string s = ReadNormalized(HlslPath, out string newline);
         if (s.Contains(HlslMarkerV2))
             return false;
 
@@ -104,14 +104,14 @@ public static class ChatGPTPerEyeShaderPatcher
         s = ReplaceRequired(s, oldCovarianceDerivative, newCovarianceDerivative,
             "current helper-based fisheye covariance derivative");
 
-        File.WriteAllText(HlslPath, s);
+        WriteNormalized(HlslPath, s, newline);
         return true;
     }
 
     static bool PatchComputeProjectionMarker()
     {
         RequireFile(ComputePath);
-        string s = File.ReadAllText(ComputePath);
+        string s = ReadNormalized(ComputePath, out string newline);
         if (s.Contains(ComputeMarkerV2))
             return false;
 
@@ -125,14 +125,14 @@ public static class ChatGPTPerEyeShaderPatcher
             "                _FisheyeParams, _FisheyeParams2, fisheyeClipPos))";
 
         s = ReplaceRequired(s, oldCall, newCall, "current helper-based fisheye center call");
-        File.WriteAllText(ComputePath, s);
+        WriteNormalized(ComputePath, s, newline);
         return true;
     }
 
     static bool PatchRuntimeSorting()
     {
         RequireFile(RuntimePath);
-        string s = File.ReadAllText(RuntimePath);
+        string s = ReadNormalized(RuntimePath, out string newline);
         if (s.Contains(RuntimeSortMarkerV2))
             return false;
 
@@ -153,14 +153,14 @@ public static class ChatGPTPerEyeShaderPatcher
 
         s = ReplaceRequired(s, partialFlipBlock, completeEyeViewBlock,
             "partial Z-row sorting matrix flip");
-        File.WriteAllText(RuntimePath, s);
+        WriteNormalized(RuntimePath, s, newline);
         return true;
     }
 
     static bool PatchComputeSorting()
     {
         RequireFile(ComputePath);
-        string s = File.ReadAllText(ComputePath);
+        string s = ReadNormalized(ComputePath, out string newline);
         if (s.Contains(ComputeSortMarkerV2))
             return false;
 
@@ -186,8 +186,21 @@ public static class ChatGPTPerEyeShaderPatcher
             "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
 
         s = ReplaceRequired(s, oldSortBlock, newSortBlock, "current radial sorting block");
-        File.WriteAllText(ComputePath, s);
+        WriteNormalized(ComputePath, s, newline);
         return true;
+    }
+
+    static string ReadNormalized(string path, out string newline)
+    {
+        string raw = File.ReadAllText(path);
+        newline = raw.Contains("\r\n") ? "\r\n" : "\n";
+        return raw.Replace("\r\n", "\n").Replace("\r", "\n");
+    }
+
+    static void WriteNormalized(string path, string normalizedText, string newline)
+    {
+        string output = newline == "\n" ? normalizedText : normalizedText.Replace("\n", newline);
+        File.WriteAllText(path, output);
     }
 
     static bool Contains(string path, string marker) =>
