@@ -16,6 +16,8 @@ public static class ChatGPTPerEyeShaderPatcher
     const string ComputeMarkerV1 = "CHATGPT_PEREYE_CENTER_PATCH";
     const string ComputeMarkerV2 = "CHATGPT_PEREYE_CENTER_V2";
     const string SortMarker = "CHATGPT_PEREYE_SORT_PATCH";
+    const string RuntimeSortMarkerV2 = "CHATGPT_EYE_CENTERED_SORT_V2";
+    const string ComputeSortMarkerV2 = "CHATGPT_RADIAL_SORT_ORIGIN_V2";
 
     static ChatGPTPerEyeShaderPatcher() => EditorApplication.delayCall += Apply;
 
@@ -24,11 +26,14 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         try
         {
-            bool changed = PatchHlsl() | PatchCompute() | PatchRuntimeSorting();
+            bool changed = PatchHlsl() |
+                           PatchCompute() |
+                           PatchRuntimeSorting() |
+                           PatchComputeSorting();
             if (changed)
             {
                 AssetDatabase.Refresh();
-                Debug.Log("Applied ChatGPT per-eye center, Jacobian, and eye-specific sorting patches.");
+                Debug.Log("Applied ChatGPT per-eye center, Jacobian, eye-specific sorting, and eye-centered radial-depth patches.");
             }
             else
             {
@@ -48,15 +53,16 @@ public static class ChatGPTPerEyeShaderPatcher
         {
             bool hlslOk = File.Exists(HlslPath) && File.ReadAllText(HlslPath).Contains(HlslMarkerV2);
             bool computeOk = File.Exists(ComputePath) && File.ReadAllText(ComputePath).Contains(ComputeMarkerV2);
-            bool sortOk = File.Exists(RuntimePath) && File.ReadAllText(RuntimePath).Contains(SortMarker);
+            bool runtimeSortOk = File.Exists(RuntimePath) && File.ReadAllText(RuntimePath).Contains(RuntimeSortMarkerV2);
+            bool computeSortOk = File.Exists(ComputePath) && File.ReadAllText(ComputePath).Contains(ComputeSortMarkerV2);
 
-            if (hlslOk && computeOk && sortOk)
+            if (hlslOk && computeOk && runtimeSortOk && computeSortOk)
             {
-                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, and eye-specific sorting are installed.");
+                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, eye-specific view matrices, and eye-centered radial sorting are installed.");
             }
             else
             {
-                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, Sorting={sortOk}");
+                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, RuntimeSorting={runtimeSortOk}, ComputeSorting={computeSortOk}");
             }
         }
         catch (Exception ex)
@@ -200,7 +206,7 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         RequireFile(RuntimePath);
         string s = File.ReadAllText(RuntimePath);
-        if (s.Contains(SortMarker))
+        if (s.Contains(RuntimeSortMarkerV2))
             return false;
 
         const string oldDispatch =
@@ -226,15 +232,90 @@ public static class ChatGPTPerEyeShaderPatcher
 
         const string oldView =
             "            Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;";
-        const string newView =
+        const string v1View =
+            "            Matrix4x4 worldToCamMatrix = stereoEye.HasValue\n" +
+            "                ? cam.GetStereoViewMatrix(stereoEye.Value)\n" +
+            "                : cam.worldToCameraMatrix;";
+        const string v1ViewWithPartialFlip =
+            "            Matrix4x4 worldToCamMatrix = stereoEye.HasValue\n" +
+            "                ? cam.GetStereoViewMatrix(stereoEye.Value)\n" +
+            "                : cam.worldToCameraMatrix;\n" +
+            "            worldToCamMatrix.m20 *= -1;\n" +
+            "            worldToCamMatrix.m21 *= -1;\n" +
+            "            worldToCamMatrix.m22 *= -1;";
+        const string v2View =
+            "            // " + RuntimeSortMarkerV2 + ": keep Unity's complete eye view matrix intact.\n" +
+            "            // Positive forward depth is derived in the compute shader as -viewPos.z.\n" +
             "            Matrix4x4 worldToCamMatrix = stereoEye.HasValue\n" +
             "                ? cam.GetStereoViewMatrix(stereoEye.Value)\n" +
             "                : cam.worldToCameraMatrix;";
 
-        s = ReplaceRequired(s, oldDispatch, newDispatch, "stereo sort dispatch");
-        s = ReplaceRequired(s, oldSignature, newSignature, "SortPoints signature");
-        s = ReplaceRequired(s, oldView, newView, "eye-specific sorting view matrix");
+        if (!s.Contains(SortMarker))
+        {
+            s = ReplaceRequired(s, oldDispatch, newDispatch, "stereo sort dispatch");
+            s = ReplaceRequired(s, oldSignature, newSignature, "SortPoints signature");
+        }
+
+        if (s.Contains(v1ViewWithPartialFlip))
+            s = s.Replace(v1ViewWithPartialFlip, v2View);
+        else if (s.Contains(v1View))
+            s = s.Replace(v1View, v2View);
+        else if (s.Contains(oldView))
+            s = s.Replace(oldView, v2View);
+        else
+            throw new InvalidOperationException("Could not locate the sorting view-matrix block.");
+
         File.WriteAllText(RuntimePath, s);
+        return true;
+    }
+
+    static bool PatchComputeSorting()
+    {
+        RequireFile(ComputePath);
+        string s = File.ReadAllText(ComputePath);
+        if (s.Contains(ComputeSortMarkerV2))
+            return false;
+
+        const string currentSortBlock =
+            "    float3 pos = LoadSplatPos(origIdx);\n" +
+            "    pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;\n\n" +
+            "    // Fisheye is non-linear: splats can overlap by angular distance instead of\n" +
+            "    // a single camera-forward depth. Use eye-radial distance whenever fisheye\n" +
+            "    // is active so sort order follows the projection mode.\n" +
+            "    bool useRadialSort = _FisheyeParams.x > 0.0001;\n" +
+            "    float sortDistance = useRadialSort ? length(pos) : pos.z;\n" +
+            "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
+
+        const string legacySortBlock =
+            "    float3 pos = LoadSplatPos(origIdx);\n" +
+            "    pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;\n\n" +
+            "    // Match PlayCanvas' default behavior: linear sorting is better for camera\n" +
+            "    // translation. Only switch to radial sorting once the fisheye cone extends\n" +
+            "    // beyond the forward hemisphere, where a single axial depth is ambiguous.\n" +
+            "    bool useRadialSort = _FisheyeParams.x > 0.0001 && _FisheyeParams2.y > 1.5807963;\n" +
+            "    float sortDistance = useRadialSort ? length(pos) : pos.z;\n" +
+            "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
+
+        const string fixedSortBlock =
+            "    // " + ComputeSortMarkerV2 + ": evaluate both metrics from the unmodified\n" +
+            "    // mono/per-eye Unity view matrix, so radial depth is centered on the active eye.\n" +
+            "    float3 objectPos = LoadSplatPos(origIdx);\n" +
+            "    float3 viewPos = mul(_MatrixMV, float4(objectPos, 1.0)).xyz;\n\n" +
+            "    // Unity camera space looks along negative Z.\n" +
+            "    float axialDepth = -viewPos.z;\n" +
+            "    float radialDepth = length(viewPos);\n\n" +
+            "    bool useRadialSort = _FisheyeParams.x > 0.0001;\n" +
+            "    float sortDistance = useRadialSort ? radialDepth : axialDepth;\n" +
+            "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
+
+        if (s.Contains(currentSortBlock))
+            s = s.Replace(currentSortBlock, fixedSortBlock);
+        else if (s.Contains(legacySortBlock))
+            s = s.Replace(legacySortBlock, fixedSortBlock);
+        else
+            throw new InvalidOperationException("Could not locate the radial sorting block in SplatUtilities.compute.");
+
+        File.WriteAllText(ComputePath, s);
         return true;
     }
 
