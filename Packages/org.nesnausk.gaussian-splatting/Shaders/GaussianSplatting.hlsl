@@ -92,47 +92,102 @@ float3 CalcCovariance2D(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
-float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,
-    float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)
+bool TryWarpFisheyeTangent(float3 viewPos, float4 fisheyeParams, float4 fisheyeParams2,
+    out float2 warpedTangent, out float gPrime, out float fisheyeS, out float kCoeff)
 {
-    float4x4 viewMatrix = matrixV;
-    float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
-
     float k = fisheyeParams.y;
     float invK = fisheyeParams.z;
-    float projMat00 = fisheyeParams.w;
-
     float rxy = length(viewPos.xy);
     float negZ = -viewPos.z;
     float theta = atan2(rxy, negZ);
     float maxTheta = fisheyeParams2.y;
     if (theta > maxTheta - 0.01 || dot(viewPos, viewPos) < 0.0001)
     {
-        aaFactor = 0;
-        return 0;
+        warpedTangent = 0;
+        gPrime = 0;
+        fisheyeS = 0;
+        kCoeff = 0;
+        return false;
     }
 
     float tk = theta * invK;
     float sinTk, cosTk;
     sincos(tk, sinTk, cosTk);
-    float gPrime = rcp(cosTk * cosTk);
+    gPrime = rcp(cosTk * cosTk);
     float gTheta = k * sinTk / cosTk;
-    float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
+    fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
 
-    float focal = screenParams.x * projMat00 * 0.5;
     float d2 = dot(viewPos, viewPos);
     float r2 = max(rxy * rxy, 1e-8);
-    float kCoeff = rxy > 1e-4 ? (gPrime * negZ / d2 - fisheyeS) / r2 : 0;
+    kCoeff = rxy > 1e-4 ? (gPrime * negZ / d2 - fisheyeS) / r2 : 0;
+    warpedTangent = fisheyeS * viewPos.xy;
+    return true;
+}
+
+bool ProjectFisheyeThroughMatrix(float3 viewPos, float4x4 matrixP, float4 fisheyeParams,
+    float4 fisheyeParams2, out float4 clipPos)
+{
+    float2 warpedTangent;
+    float gPrime, fisheyeS, kCoeff;
+    if (!TryWarpFisheyeTangent(viewPos, fisheyeParams, fisheyeParams2,
+            warpedTangent, gPrime, fisheyeS, kCoeff))
+    {
+        clipPos = 0;
+        return false;
+    }
+
+    clipPos = mul(matrixP, float4(warpedTangent.x, warpedTangent.y, -1.0, 1.0));
+    return abs(clipPos.w) > 1e-6;
+}
+
+float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,
+    float4x4 matrixP, float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2,
+    out float aaFactor)
+{
+    float4x4 viewMatrix = matrixV;
+    float3 viewPos = mul(viewMatrix, float4(worldPos, 1)).xyz;
+
+    float2 warpedTangent;
+    float gPrime, fisheyeS, kCoeff;
+    if (!TryWarpFisheyeTangent(viewPos, fisheyeParams, fisheyeParams2,
+            warpedTangent, gPrime, fisheyeS, kCoeff))
+    {
+        aaFactor = 0;
+        return 0;
+    }
+
+    float4 clip = mul(matrixP, float4(warpedTangent.x, warpedTangent.y, -1.0, 1.0));
+    if (abs(clip.w) <= 1e-6)
+    {
+        aaFactor = 0;
+        return 0;
+    }
+
+    float invClipW = rcp(clip.w);
+    float2 ndc = clip.xy * invClipW;
+    float4 dClipDu = float4(matrixP._m00, matrixP._m10, matrixP._m20, matrixP._m30);
+    float4 dClipDv = float4(matrixP._m01, matrixP._m11, matrixP._m21, matrixP._m31);
+    float2 dNdcDu = (dClipDu.xy - ndc * dClipDu.w) * invClipW;
+    float2 dNdcDv = (dClipDv.xy - ndc * dClipDv.w) * invClipW;
+    float2 dPixelDu = float2(screenParams.x * 0.5 * dNdcDu.x, screenParams.y * 0.5 * dNdcDu.y);
+    float2 dPixelDv = float2(screenParams.x * 0.5 * dNdcDv.x, screenParams.y * 0.5 * dNdcDv.y);
+
+    float d2 = dot(viewPos, viewPos);
+    float duDx = fisheyeS + kCoeff * viewPos.x * viewPos.x;
+    float duDy = kCoeff * viewPos.x * viewPos.y;
+    float duDz = gPrime * viewPos.x / d2;
+    float dvDx = duDy;
+    float dvDy = fisheyeS + kCoeff * viewPos.y * viewPos.y;
+    float dvDz = gPrime * viewPos.y / d2;
+
+    float3 row0 = dPixelDu.x * float3(duDx, duDy, duDz) +
+        dPixelDv.x * float3(dvDx, dvDy, dvDz);
+    float3 row1 = dPixelDu.y * float3(duDx, duDy, duDz) +
+        dPixelDv.y * float3(dvDx, dvDy, dvDz);
 
     float3x3 J = float3x3(
-        focal * (fisheyeS + kCoeff * viewPos.x * viewPos.x),
-        focal * kCoeff * viewPos.x * viewPos.y,
-        focal * gPrime * viewPos.x / d2,
-
-        focal * kCoeff * viewPos.x * viewPos.y,
-        focal * (fisheyeS + kCoeff * viewPos.y * viewPos.y),
-        focal * gPrime * viewPos.y / d2,
-
+        row0.x, row0.y, row0.z,
+        row1.x, row1.y, row1.z,
         0, 0, 0
     );
 

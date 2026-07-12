@@ -83,10 +83,10 @@ void CSCalcDistances (uint3 id : SV_DispatchThreadID)
     float3 pos = LoadSplatPos(origIdx);
     pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;
 
-    // Match PlayCanvas' default behavior: linear sorting is better for camera
-    // translation. Only switch to radial sorting once the fisheye cone extends
-    // beyond the forward hemisphere, where a single axial depth is ambiguous.
-    bool useRadialSort = _FisheyeParams.x > 0.0001 && _FisheyeParams2.y > 1.5807963;
+    // Fisheye is non-linear: splats can overlap by angular distance instead of
+    // a single camera-forward depth. Use eye-radial distance whenever fisheye
+    // is active so sort order follows the projection mode.
+    bool useRadialSort = _FisheyeParams.x > 0.0001;
     float sortDistance = useRadialSort ? length(pos) : pos.z;
     _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);
 }
@@ -219,6 +219,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         ? mul(_MatrixVP, float4(centerWorldPos, 1))
         : mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     float3 centerViewPos = mul(_MatrixMV, float4(splat.pos, 1)).xyz;
+    float4x4 covarianceProjection = _UseExplicitCameraMatrices != 0 ? _MatrixP : UNITY_MATRIX_P;
     half opacityScale = _SplatOpacityScale;
     float splatScale = _SplatScale;
     if (_NearFadeDistance > 0.0001)
@@ -233,35 +234,23 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
     if (_FisheyeParams.x > 0.0001)
     {
-        float k = _FisheyeParams.y;
-        float invK = _FisheyeParams.z;
-        float projMat00 = _FisheyeParams.w;
-        float projMat11 = _FisheyeParams2.x;
-        float maxTheta = _FisheyeParams2.y;
-
-        float rxy = length(centerViewPos.xy);
         float negZ = -centerViewPos.z;
-        float theta = atan2(rxy, negZ);
-
-        if (theta > maxTheta - 0.01 || dot(centerViewPos, centerViewPos) < 0.0001)
+        float4 fisheyeClipPos;
+        if (!ProjectFisheyeThroughMatrix(centerViewPos, covarianceProjection,
+                _FisheyeParams, _FisheyeParams2, fisheyeClipPos))
         {
             centerClipPos.w = 0;
         }
         else
         {
-            float tk = theta * invK;
-            float sinTk, cosTk;
-            sincos(tk, sinTk, cosTk);
-            float gTheta = k * sinTk / cosTk;
-            float fisheyeS = rxy > 1e-4 ? gTheta / rxy : (negZ > 0 ? rcp(negZ) : 0);
-            float2 ndc = float2(projMat00 * fisheyeS * centerViewPos.x, projMat11 * fisheyeS * centerViewPos.y);
+            float2 ndc = fisheyeClipPos.xy / fisheyeClipPos.w;
             float nearPlane = _ProjectionParams.y;
             float farPlane = _ProjectionParams.z;
             float depthNdc = saturate((negZ - nearPlane) / max(farPlane - nearPlane, 1e-6));
             #if defined(UNITY_REVERSED_Z)
                 depthNdc = 1.0 - depthNdc;
             #endif
-            centerClipPos = float4(ndc.x, -ndc.y, depthNdc, 1.0);
+            centerClipPos = float4(ndc.x, ndc.y, depthNdc, 1.0);
         }
     }
 
@@ -297,14 +286,11 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         float splatScale2 = splatScale * splatScale;
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
-        float4x4 covarianceProjection = _MatrixP;
-        if (_UseExplicitCameraMatrices == 0)
-            covarianceProjection = UNITY_MATRIX_P;
         float aaFactor = 1.0;
         float3 cov2d;
         if (_FisheyeParams.x > 0.0001)
             cov2d = CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV,
-                _VecScreenParams, _FisheyeParams, _FisheyeParams2, aaFactor);
+                covarianceProjection, _VecScreenParams, _FisheyeParams, _FisheyeParams2, aaFactor);
         else
             cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV,
                 covarianceProjection, _VecScreenParams, aaFactor);

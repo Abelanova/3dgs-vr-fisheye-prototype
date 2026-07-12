@@ -122,8 +122,11 @@ namespace GaussianSplatting.Runtime
 
                 // sort
                 var matrix = gs.transform.localToWorldMatrix;
-                if (updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0)
-                    gs.SortPoints(cmb, cam, matrix);
+                bool sortThisPass = updateSortAndFrame && gs.m_FrameCounter % gs.m_SortNthFrame == 0;
+                if (!sortThisPass && stereoEye.HasValue && gs.m_FisheyeStrength > 0.0001f)
+                    sortThisPass = true;
+                if (sortThisPass)
+                    gs.SortPoints(cmb, cam, matrix, stereoEye);
                 if (updateSortAndFrame)
                     ++gs.m_FrameCounter;
 
@@ -645,12 +648,15 @@ namespace GaussianSplatting.Runtime
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
         }
 
-        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix)
+        internal void SortPoints(CommandBuffer cmd, Camera cam, Matrix4x4 matrix,
+            Camera.StereoscopicEye? stereoEye = null)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
 
-            Matrix4x4 worldToCamMatrix = cam.worldToCameraMatrix;
+            Matrix4x4 worldToCamMatrix = stereoEye.HasValue
+                ? cam.GetStereoViewMatrix(stereoEye.Value)
+                : cam.worldToCameraMatrix;
             worldToCamMatrix.m20 *= -1;
             worldToCamMatrix.m21 *= -1;
             worldToCamMatrix.m22 *= -1;
