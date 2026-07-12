@@ -11,8 +11,10 @@ public static class ChatGPTPerEyeShaderPatcher
     const string HlslPath = "Packages/org.nesnausk.gaussian-splatting/Shaders/GaussianSplatting.hlsl";
     const string RuntimePath = "Packages/org.nesnausk.gaussian-splatting/Runtime/GaussianSplatRenderer.cs";
 
-    const string HlslMarker = "CHATGPT_PEREYE_MATRIX_PATCH";
-    const string ComputeMarker = "CHATGPT_PEREYE_CENTER_PATCH";
+    const string HlslMarkerV1 = "CHATGPT_PEREYE_MATRIX_PATCH";
+    const string HlslMarkerV2 = "CHATGPT_PEREYE_JACOBIAN_V2";
+    const string ComputeMarkerV1 = "CHATGPT_PEREYE_CENTER_PATCH";
+    const string ComputeMarkerV2 = "CHATGPT_PEREYE_CENTER_V2";
     const string SortMarker = "CHATGPT_PEREYE_SORT_PATCH";
 
     static ChatGPTPerEyeShaderPatcher() => EditorApplication.delayCall += Apply;
@@ -44,13 +46,13 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         try
         {
-            bool hlslOk = File.Exists(HlslPath) && File.ReadAllText(HlslPath).Contains(HlslMarker);
-            bool computeOk = File.Exists(ComputePath) && File.ReadAllText(ComputePath).Contains(ComputeMarker);
+            bool hlslOk = File.Exists(HlslPath) && File.ReadAllText(HlslPath).Contains(HlslMarkerV2);
+            bool computeOk = File.Exists(ComputePath) && File.ReadAllText(ComputePath).Contains(ComputeMarkerV2);
             bool sortOk = File.Exists(RuntimePath) && File.ReadAllText(RuntimePath).Contains(SortMarker);
 
             if (hlslOk && computeOk && sortOk)
             {
-                Debug.Log("ChatGPT per-eye verification passed: matrix-aware center projection, per-eye Jacobian, and eye-specific sorting are installed.");
+                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, and eye-specific sorting are installed.");
             }
             else
             {
@@ -67,30 +69,41 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         RequireFile(HlslPath);
         string s = File.ReadAllText(HlslPath);
-        if (s.Contains(HlslMarker))
+        if (s.Contains(HlslMarkerV2))
             return false;
 
-        const string oldSignature =
+        const string originalSignature =
             "float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,\n" +
             "    float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)";
-        const string newSignature =
-            "// " + HlslMarker + "\n" +
+        const string patchedSignature =
+            "// " + HlslMarkerV1 + "\n" +
+            "// " + HlslMarkerV2 + ": the Jacobian uses the same virtual fisheye x/y scales as the center map.\n" +
             "float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,\n" +
             "    float4x4 matrixP, float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)";
 
-        const string oldFocal = "    float focal = screenParams.x * projMat00 * 0.5;";
-        const string newFocal =
+        const string v1Signature =
+            "// " + HlslMarkerV1 + "\n" +
+            "float3 CalcCovariance2DFisheye(float3 worldPos, float3 cov3d0, float3 cov3d1, float4x4 matrixV,\n" +
+            "    float4x4 matrixP, float4 screenParams, float4 fisheyeParams, float4 fisheyeParams2, out float aaFactor)";
+
+        const string originalFocal = "    float focal = screenParams.x * projMat00 * 0.5;";
+        const string v1Focal =
             "    float focalX = screenParams.x * abs(matrixP._m00) * 0.5;\n" +
             "    float focalY = screenParams.y * abs(matrixP._m11) * 0.5;";
+        const string v2Focal =
+            "    // Principal-point offsets do not affect the covariance derivative.\n" +
+            "    // Use the exact virtual fisheye scales used by the center projection.\n" +
+            "    float focalX = screenParams.x * abs(fisheyeParams.w) * 0.5;\n" +
+            "    float focalY = screenParams.y * abs(fisheyeParams2.x) * 0.5;";
 
-        const string oldJ =
+        const string originalJ =
             "        focal * (fisheyeS + kCoeff * viewPos.x * viewPos.x),\n" +
             "        focal * kCoeff * viewPos.x * viewPos.y,\n" +
             "        focal * gPrime * viewPos.x / d2,\n\n" +
             "        focal * kCoeff * viewPos.x * viewPos.y,\n" +
             "        focal * (fisheyeS + kCoeff * viewPos.y * viewPos.y),\n" +
             "        focal * gPrime * viewPos.y / d2,";
-        const string newJ =
+        const string xyJ =
             "        focalX * (fisheyeS + kCoeff * viewPos.x * viewPos.x),\n" +
             "        focalX * kCoeff * viewPos.x * viewPos.y,\n" +
             "        focalX * gPrime * viewPos.x / d2,\n\n" +
@@ -98,9 +111,18 @@ public static class ChatGPTPerEyeShaderPatcher
             "        focalY * (fisheyeS + kCoeff * viewPos.y * viewPos.y),\n" +
             "        focalY * gPrime * viewPos.y / d2,";
 
-        s = ReplaceRequired(s, oldSignature, newSignature, "fisheye covariance signature");
-        s = ReplaceRequired(s, oldFocal, newFocal, "fisheye focal scaling");
-        s = ReplaceRequired(s, oldJ, newJ, "fisheye Jacobian rows");
+        if (s.Contains(HlslMarkerV1))
+        {
+            s = ReplaceRequired(s, v1Signature, patchedSignature, "v1 fisheye covariance signature");
+            s = ReplaceRequired(s, v1Focal, v2Focal, "v1 fisheye focal scaling");
+        }
+        else
+        {
+            s = ReplaceRequired(s, originalSignature, patchedSignature, "fisheye covariance signature");
+            s = ReplaceRequired(s, originalFocal, v2Focal, "fisheye focal scaling");
+            s = ReplaceRequired(s, originalJ, xyJ, "fisheye Jacobian rows");
+        }
+
         File.WriteAllText(HlslPath, s);
         return true;
     }
@@ -109,27 +131,67 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         RequireFile(ComputePath);
         string s = File.ReadAllText(ComputePath);
-        if (s.Contains(ComputeMarker))
+        if (s.Contains(ComputeMarkerV2))
             return false;
 
-        const string oldCenter =
+        const string originalCenter =
             "            float2 ndc = float2(projMat00 * fisheyeS * centerViewPos.x, projMat11 * fisheyeS * centerViewPos.y);";
-        const string newCenter =
-            "            // " + ComputeMarker + ": route the nonlinear ray through the complete per-eye projection matrix.\n" +
+
+        const string v1CenterA =
+            "            // " + ComputeMarkerV1 + ": route the nonlinear ray through the complete per-eye projection matrix.\n" +
+            "            float2 warpedTangent = fisheyeS * centerViewPos.xy;\n" +
+            "            float4 warpedClip = mul(_MatrixP, float4(warpedTangent, -1.0, 1.0));\n" +
+            "            float2 ndc = warpedClip.xy / max(abs(warpedClip.w), 1e-6);";
+
+        const string v1CenterB =
+            "            // " + ComputeMarkerV1 + ": route the nonlinear ray through the complete per-eye projection matrix.\n" +
             "            float2 warpedTangent = fisheyeS * centerViewPos.xy;\n" +
             "            float4 warpedClip = mul(_MatrixP, float4(warpedTangent, -1.0, 1.0));\n" +
             "            float safeW = abs(warpedClip.w) > 1e-6 ? warpedClip.w : (warpedClip.w >= 0.0 ? 1e-6 : -1e-6);\n" +
             "            float2 ndc = warpedClip.xy / safeW;";
 
-        const string oldCall =
+        const string v2Center =
+            "            // " + ComputeMarkerV1 + "\n" +
+            "            // " + ComputeMarkerV2 + ": preserve the requested virtual fisheye scale while\n" +
+            "            // inheriting the per-eye principal point and GPU projection-axis signs.\n" +
+            "            float2 warpedTangent = fisheyeS * centerViewPos.xy;\n" +
+            "            float2 nativeProjectionScale = max(abs(float2(_MatrixP._m00, _MatrixP._m11)), 1e-6);\n" +
+            "            float2 virtualToNativeScale = float2(projMat00, projMat11) / nativeProjectionScale;\n" +
+            "            float4 warpedClip = mul(_MatrixP, float4(warpedTangent * virtualToNativeScale, -1.0, 1.0));\n" +
+            "            float safeW = abs(warpedClip.w) > 1e-6 ? warpedClip.w : (warpedClip.w >= 0.0 ? 1e-6 : -1e-6);\n" +
+            "            float2 ndc = warpedClip.xy / safeW;";
+
+        if (s.Contains(ComputeMarkerV1))
+        {
+            if (s.Contains(v1CenterB))
+                s = s.Replace(v1CenterB, v2Center);
+            else if (s.Contains(v1CenterA))
+                s = s.Replace(v1CenterA, v2Center);
+            else
+                throw new InvalidOperationException("Could not upgrade the v1 per-eye center projection block.");
+        }
+        else
+        {
+            s = ReplaceRequired(s, originalCenter, v2Center, "per-eye center projection");
+        }
+
+        const string originalCall =
             "            cov2d = CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV,\n" +
             "                _VecScreenParams, _FisheyeParams, _FisheyeParams2, aaFactor);";
-        const string newCall =
+        const string matrixCall =
             "            cov2d = CalcCovariance2DFisheye(splat.pos, cov3d0, cov3d1, _MatrixMV,\n" +
             "                covarianceProjection, _VecScreenParams, _FisheyeParams, _FisheyeParams2, aaFactor);";
+        if (s.Contains(originalCall))
+            s = s.Replace(originalCall, matrixCall);
+        else if (!s.Contains(matrixCall))
+            throw new InvalidOperationException("Could not locate the matrix-aware fisheye covariance call.");
 
-        s = ReplaceRequired(s, oldCenter, newCenter, "per-eye center projection");
-        s = ReplaceRequired(s, oldCall, newCall, "matrix-aware covariance call");
+        const string flippedCenter = "            centerClipPos = float4(ndc.x, -ndc.y, depthNdc, 1.0);";
+        const string gpuConsistentCenter =
+            "            // The GPU projection matrix already carries the render-target Y convention.\n" +
+            "            centerClipPos = float4(ndc.x, ndc.y, depthNdc, 1.0);";
+        s = ReplaceRequired(s, flippedCenter, gpuConsistentCenter, "GPU-consistent fisheye center Y");
+
         File.WriteAllText(ComputePath, s);
         return true;
     }
