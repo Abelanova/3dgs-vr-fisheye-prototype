@@ -8,6 +8,8 @@ public sealed class CameraFovController : MonoBehaviour
     [SerializeField] GaussianSplatRenderer targetSplat;
     [SerializeField, Range(20.0f, 360.0f)] float verticalFov = 60.0f;
     [SerializeField, Range(20.0f, 170.0f)] float cameraFovLimit = 140.0f;
+    [SerializeField, Tooltip("Keep the XR runtime's native per-eye projection matrices. The virtual FOV still controls the fisheye mapping on the splat renderer.")]
+    bool preserveNativeXrProjection = true;
 #if UNITY_EDITOR
     [SerializeField] bool squareEditorGameView = true;
 #endif
@@ -62,12 +64,24 @@ public sealed class CameraFovController : MonoBehaviour
 
         if (targetCamera != null)
         {
-            targetCamera.fieldOfView = Mathf.Min(verticalFov, cameraFovLimit);
+            bool xrOwnsProjection = preserveNativeXrProjection && targetCamera.stereoEnabled;
+            if (!xrOwnsProjection)
+                targetCamera.fieldOfView = Mathf.Min(verticalFov, cameraFovLimit);
+
 #if UNITY_EDITOR
-            ApplySquareEditorViewport(targetCamera);
+            // The square viewport is only a desktop/editor preview aid. Do not
+            // crop an XR eye texture, because that changes the effective
+            // principal point seen by the compositor.
+            if (!targetCamera.stereoEnabled)
+                ApplySquareEditorViewport(targetCamera);
+            else
+                targetCamera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
 #endif
         }
 
+        // Always forward the requested virtual FOV to the splat renderer. In XR
+        // this controls the nonlinear camera model without overwriting the
+        // runtime-provided left/right projection matrices.
         ApplyToActiveSplats(verticalFov);
     }
 
