@@ -85,17 +85,20 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
     const float InspectionFov = 180.0f;
     const float InspectionFisheye = 0.72f;
     const float RayDistance = 12.0f;
+    const float MarkerHudDepth = 2.0f;
 
     readonly List<PeripheralInspectionTarget> targets = new();
     readonly Dictionary<GaussianSplatRenderer, Vector2> originalSplatProjection = new();
 
     Camera taskCamera;
     CameraFovController fovController;
+    GaussianSplatRenderer projectionRenderer;
     PeripheralInspectionTaskBootstrap owner;
     Transform rightControllerRay;
     float originalCameraFov;
     float originalControllerFov;
     int foundCount;
+    int visibleCount;
     bool inspectionMode;
     bool completed;
     bool previousXrTrigger;
@@ -144,6 +147,32 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
             TryActivateTarget(selectionRay);
     }
 
+    void LateUpdate()
+    {
+        if (!initialized || taskCamera == null)
+            return;
+
+        visibleCount = 0;
+        foreach (PeripheralInspectionTarget target in targets)
+        {
+            if (target == null || target.IsActivated)
+                continue;
+
+            bool visible = TryProjectTarget(target.AnchorWorldPosition, out Vector2 viewport);
+            if (visible)
+            {
+                Vector3 markerPosition = taskCamera.ViewportToWorldPoint(
+                    new Vector3(viewport.x, viewport.y, MarkerHudDepth));
+                target.SetProjectedPose(markerPosition, taskCamera.transform.rotation, true);
+                visibleCount++;
+            }
+            else
+            {
+                target.SetProjectedPose(Vector3.zero, Quaternion.identity, false);
+            }
+        }
+    }
+
     void OnDestroy()
     {
         if (initialized)
@@ -161,9 +190,9 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
 
         Quaternion baseRotation = Quaternion.LookRotation(horizontalForward, Vector3.up);
 
-        // The peripheral markers are outside a conventional 60-degree view but
-        // remain inside Unity's wider support frustum. This makes the before/after
-        // transition legible without relying on scene-specific coordinates.
+        // Anchors are fixed in the scene. Their marker graphics are projected onto
+        // a comfortable HUD depth so the same task remains visible in desktop and
+        // stereo VR even though ordinary Unity meshes do not use the splat shader.
         CreateTarget(0, baseRotation, yaw: 8.0f, pitch: -2.0f, distance: 3.0f,
             new Color(0.20f, 0.95f, 1.00f, 1.0f));
         CreateTarget(1, baseRotation, yaw: 55.0f, pitch: 8.0f, distance: 3.7f,
@@ -175,24 +204,23 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
     void CreateTarget(int index, Quaternion baseRotation, float yaw, float pitch, float distance, Color color)
     {
         Vector3 direction = baseRotation * Quaternion.Euler(-pitch, yaw, 0.0f) * Vector3.forward;
-        Vector3 position = taskCamera.transform.position + direction.normalized * distance;
+        Vector3 anchorPosition = taskCamera.transform.position + direction.normalized * distance;
 
         var targetObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         targetObject.name = $"Inspection Marker {index + 1}";
         targetObject.transform.SetParent(transform, true);
-        targetObject.transform.position = position;
-        targetObject.transform.localScale = Vector3.one * 0.28f;
+        targetObject.transform.localScale = Vector3.one * 0.13f;
 
         var marker = targetObject.AddComponent<PeripheralInspectionTarget>();
-        marker.Initialize(index, color, targetObject.transform.localScale);
+        marker.Initialize(index, color, targetObject.transform.localScale, anchorPosition);
         targets.Add(marker);
 
         var lightObject = new GameObject("Marker Glow");
         lightObject.transform.SetParent(targetObject.transform, false);
         var light = lightObject.AddComponent<Light>();
         light.type = LightType.Point;
-        light.range = 1.25f;
-        light.intensity = 1.4f;
+        light.range = 0.75f;
+        light.intensity = 1.2f;
         light.color = color;
     }
 
@@ -207,6 +235,70 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
 
         if (completed)
             Debug.Log("Peripheral inspection task complete: all markers found.");
+    }
+
+    bool TryProjectTarget(Vector3 anchorWorldPosition, out Vector2 viewport)
+    {
+        if (!inspectionMode)
+        {
+            Vector3 perspectiveViewport = taskCamera.WorldToViewportPoint(anchorWorldPosition);
+            viewport = new Vector2(perspectiveViewport.x, perspectiveViewport.y);
+            return perspectiveViewport.z > 0.0f && IsInsideViewport(viewport);
+        }
+
+        GaussianSplatRenderer renderer = ResolveProjectionRenderer();
+        if (renderer == null)
+        {
+            viewport = default;
+            return false;
+        }
+
+        var (fisheyeParams, fisheyeParams2) = renderer.GetFisheyeShaderParams(taskCamera);
+        if (fisheyeParams.x <= 0.0001f)
+        {
+            viewport = default;
+            return false;
+        }
+
+        Vector3 directionWorld = (anchorWorldPosition - taskCamera.transform.position).normalized;
+        Vector3 directionCamera = taskCamera.transform.InverseTransformDirection(directionWorld);
+        float radial = new Vector2(directionCamera.x, directionCamera.y).magnitude;
+        float theta = Mathf.Atan2(radial, directionCamera.z);
+        if (theta > fisheyeParams2.y - 0.01f)
+        {
+            viewport = default;
+            return false;
+        }
+
+        float gTheta = fisheyeParams.y * Mathf.Tan(theta * fisheyeParams.z);
+        float radialScale = radial > 0.0001f ? gTheta / radial : 0.0f;
+        float ndcX = fisheyeParams.w * radialScale * directionCamera.x;
+        float ndcY = fisheyeParams2.x * radialScale * directionCamera.y;
+        viewport = new Vector2(ndcX * 0.5f + 0.5f, ndcY * 0.5f + 0.5f);
+        return IsInsideViewport(viewport);
+    }
+
+    static bool IsInsideViewport(Vector2 viewport) =>
+        viewport.x >= 0.04f && viewport.x <= 0.96f &&
+        viewport.y >= 0.04f && viewport.y <= 0.96f;
+
+    GaussianSplatRenderer ResolveProjectionRenderer()
+    {
+        if (projectionRenderer != null && projectionRenderer.isActiveAndEnabled)
+            return projectionRenderer;
+
+        GaussianSplatRenderer[] renderers = Object.FindObjectsByType<GaussianSplatRenderer>(
+            FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (GaussianSplatRenderer renderer in renderers)
+        {
+            if (!renderer.isActiveAndEnabled)
+                continue;
+
+            projectionRenderer = renderer;
+            return projectionRenderer;
+        }
+
+        return null;
     }
 
     void TryActivateTarget(Ray ray)
@@ -225,9 +317,9 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
         if (Physics.Raycast(ray, out RaycastHit hit, RayDistance, ~0, QueryTriggerInteraction.Ignore))
             hovered = hit.collider.GetComponent<PeripheralInspectionTarget>();
 
-        foreach (var target in targets)
+        foreach (PeripheralInspectionTarget target in targets)
         {
-            if (target != null && !target.IsActivated)
+            if (target != null && !target.IsActivated && target.IsProjectionVisible)
                 target.SetHovered(target == hovered);
         }
     }
@@ -293,7 +385,8 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
     void RememberOriginalProjection(GaussianSplatRenderer renderer)
     {
         if (renderer != null && !originalSplatProjection.ContainsKey(renderer))
-            originalSplatProjection.Add(renderer, new Vector2(renderer.m_FisheyeFieldOfView, renderer.m_FisheyeStrength));
+            originalSplatProjection.Add(renderer,
+                new Vector2(renderer.m_FisheyeFieldOfView, renderer.m_FisheyeStrength));
     }
 
     void RestoreProjectionValues()
@@ -317,7 +410,7 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
     {
         foundCount = 0;
         completed = false;
-        foreach (var target in targets)
+        foreach (PeripheralInspectionTarget target in targets)
         {
             if (target != null)
                 target.ResetTarget();
@@ -364,7 +457,7 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
     void OnGUI()
     {
         const float width = 390.0f;
-        float height = completed ? 156.0f : 136.0f;
+        float height = completed ? 178.0f : 158.0f;
         var rect = new Rect(Screen.width - width - 18.0f, 18.0f, width, height);
         GUI.Box(rect, GUIContent.none);
 
@@ -374,14 +467,16 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
         GUI.Label(new Rect(rect.x + 14.0f, rect.y + 34.0f, width - 28.0f, 20.0f),
             $"Mode: {mode}");
         GUI.Label(new Rect(rect.x + 14.0f, rect.y + 56.0f, width - 28.0f, 20.0f),
+            $"Visible now: {visibleCount} / {targets.Count - foundCount}");
+        GUI.Label(new Rect(rect.x + 14.0f, rect.y + 78.0f, width - 28.0f, 20.0f),
             $"Targets found: {foundCount} / {targets.Count}");
-        GUI.Label(new Rect(rect.x + 14.0f, rect.y + 82.0f, width - 28.0f, 20.0f),
+        GUI.Label(new Rect(rect.x + 14.0f, rect.y + 104.0f, width - 28.0f, 20.0f),
             "Tab / left shoulder: toggle lens");
-        GUI.Label(new Rect(rect.x + 14.0f, rect.y + 102.0f, width - 28.0f, 20.0f),
+        GUI.Label(new Rect(rect.x + 14.0f, rect.y + 124.0f, width - 28.0f, 20.0f),
             "Aim + Space / click / right trigger: activate");
 
         if (completed)
-            GUI.Label(new Rect(rect.x + 14.0f, rect.y + 126.0f, width - 28.0f, 20.0f),
+            GUI.Label(new Rect(rect.x + 14.0f, rect.y + 148.0f, width - 28.0f, 20.0f),
                 "Inspection complete — press R to reset");
     }
 }
@@ -391,13 +486,14 @@ public sealed class PeripheralInspectionTarget : MonoBehaviour
     Renderer targetRenderer;
     Material runtimeMaterial;
     Vector3 baseScale;
-    Color targetColor;
 
+    public Vector3 AnchorWorldPosition { get; private set; }
     public bool IsActivated { get; private set; }
+    public bool IsProjectionVisible { get; private set; }
 
-    public void Initialize(int index, Color color, Vector3 initialScale)
+    public void Initialize(int index, Color color, Vector3 initialScale, Vector3 anchorWorldPosition)
     {
-        targetColor = color;
+        AnchorWorldPosition = anchorWorldPosition;
         baseScale = initialScale;
         targetRenderer = GetComponent<Renderer>();
 
@@ -410,15 +506,34 @@ public sealed class PeripheralInspectionTarget : MonoBehaviour
         if (shader != null)
         {
             runtimeMaterial = new Material(shader) { name = $"Inspection Marker {index + 1} Material" };
-            ApplyMaterialColor(runtimeMaterial, targetColor);
+            ApplyMaterialColor(runtimeMaterial, color);
             if (targetRenderer != null)
                 targetRenderer.sharedMaterial = runtimeMaterial;
         }
     }
 
+    public void SetProjectedPose(Vector3 position, Quaternion rotation, bool visible)
+    {
+        IsProjectionVisible = visible;
+        if (IsActivated)
+        {
+            if (gameObject.activeSelf)
+                gameObject.SetActive(false);
+            return;
+        }
+
+        if (gameObject.activeSelf != visible)
+            gameObject.SetActive(visible);
+
+        if (!visible)
+            return;
+
+        transform.SetPositionAndRotation(position, rotation);
+    }
+
     public void SetHovered(bool hovered)
     {
-        if (IsActivated)
+        if (IsActivated || !IsProjectionVisible)
             return;
 
         transform.localScale = baseScale * (hovered ? 1.32f : 1.0f);
@@ -430,14 +545,15 @@ public sealed class PeripheralInspectionTarget : MonoBehaviour
             return;
 
         IsActivated = true;
+        IsProjectionVisible = false;
         gameObject.SetActive(false);
     }
 
     public void ResetTarget()
     {
         IsActivated = false;
+        IsProjectionVisible = false;
         transform.localScale = baseScale;
-        gameObject.SetActive(true);
     }
 
     void OnDestroy()
