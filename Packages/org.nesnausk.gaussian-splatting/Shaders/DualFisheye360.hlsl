@@ -3,13 +3,15 @@
 #define GAUSSIAN_DUAL_FISHEYE_360_INCLUDED
 
 // Experimental direct dual-fisheye projection for near-360-degree views.
-// It keeps the existing single-disc path unchanged and activates only when
-// the configured fisheye cone approaches the full sphere (maxTheta > 3 rad).
-// Front-facing splats are mapped into the left 180-degree disc; back-facing
-// splats are rotated 180 degrees around view-space Y and mapped into the right disc.
+// Version 2 deliberately uses two separated, pixel-circular, equidistant
+// 180-degree lenses. This avoids the previous capsule / oval appearance that
+// resulted when two generalized-fisheye discs touched in the middle.
 
 static const float DUAL_FISHEYE_HALF_PI = 1.5707963267948966;
 static const float DUAL_FISHEYE_ENABLE_THETA = 3.0;
+static const float DUAL_FISHEYE_CENTER_X = 0.52;
+static const float DUAL_FISHEYE_MAX_RADIUS_X = 0.46;
+static const float DUAL_FISHEYE_MAX_RADIUS_Y = 0.92;
 
 bool IsDualFisheye360(float4 fisheyeParams2)
 {
@@ -19,17 +21,21 @@ bool IsDualFisheye360(float4 fisheyeParams2)
 float3 DualFisheyeLensView(float3 viewPos, out bool backHemisphere)
 {
     backHemisphere = viewPos.z > 0.0;
-    // A 180-degree rotation about view-space Y creates a conventional backward lens.
+    // The rear lens is the same 180-degree model after a Y-axis half turn.
     return backHemisphere ? float3(-viewPos.x, viewPos.y, -viewPos.z) : viewPos;
 }
 
 float2 DualFisheyeDiscScale(float4 screenParams)
 {
     float aspect = max(screenParams.x / max(screenParams.y, 1.0), 1e-5);
-    // Two equal pixel-space circles placed side by side. The limiting dimension
-    // is half of the viewport width or the full viewport height.
-    float radiusX = min(0.5, rcp(aspect));
-    float radiusY = min(1.0, aspect * 0.5);
+
+    // Preserve circles in pixel space:
+    // radiusX * viewportWidth == radiusY * viewportHeight.
+    // Leave a visible gap between the front and rear discs so their union can
+    // never be mistaken for one oval / capsule.
+    float radiusX = min(DUAL_FISHEYE_MAX_RADIUS_X,
+                        DUAL_FISHEYE_MAX_RADIUS_Y / aspect);
+    float radiusY = radiusX * aspect;
     return float2(radiusX, radiusY);
 }
 
@@ -55,26 +61,16 @@ float2 ProjectFisheyeCenterDualAware(
 
     float rxy = length(lensPos.xy);
     float negZ = -lensPos.z;
-    float theta = atan2(rxy, negZ);
+    float theta = min(atan2(rxy, negZ), DUAL_FISHEYE_HALF_PI);
 
-    float k = max(fisheyeParams.y, 1.0001);
-    float invK = rcp(k);
-    float tk = theta * invK;
-    float edgeTk = DUAL_FISHEYE_HALF_PI * invK;
-
-    float sinTk, cosTk;
-    sincos(tk, sinTk, cosTk);
-    float sinEdge, cosEdge;
-    sincos(edgeTk, sinEdge, cosEdge);
-
-    float gTheta = k * sinTk / max(abs(cosTk), 1e-5);
-    float gEdge = k * sinEdge / max(abs(cosEdge), 1e-5);
-    float normalizedRadius = gTheta / max(abs(gEdge), 1e-5);
-
+    // Equidistant 180-degree lens: theta = 0 at the disc center and theta =
+    // pi/2 at the circumference. This is monotonic and has no generalized-tan
+    // singularity inside either hemisphere.
+    float normalizedRadius = theta / DUAL_FISHEYE_HALF_PI;
     float2 direction = rxy > 1e-5 ? lensPos.xy / rxy : float2(0.0, 0.0);
     float2 localDisc = normalizedRadius * float2(direction.x, -direction.y);
     float2 discScale = DualFisheyeDiscScale(screenParams);
-    float discCenterX = backHemisphere ? 0.5 : -0.5;
+    float discCenterX = backHemisphere ? DUAL_FISHEYE_CENTER_X : -DUAL_FISHEYE_CENTER_X;
 
     return float2(discCenterX + localDisc.x * discScale.x,
                   localDisc.y * discScale.y);
@@ -115,29 +111,21 @@ float3 CalcCovariance2DFisheyeDualAware(
         W = mul(backRotation, W);
     }
 
-    float k = max(fisheyeParams.y, 1.0001);
-    float invK = rcp(k);
     float rxy = length(lensPos.xy);
     float negZ = -lensPos.z;
-    float theta = atan2(rxy, negZ);
+    float theta = min(atan2(rxy, negZ), DUAL_FISHEYE_HALF_PI);
 
-    float tk = theta * invK;
-    float sinTk, cosTk;
-    sincos(tk, sinTk, cosTk);
-    float gPrime = rcp(max(cosTk * cosTk, 1e-8));
-    float gTheta = k * sinTk / max(abs(cosTk), 1e-5);
+    // For the equidistant model g(theta) = theta:
+    // g'(theta) = 1 and g(theta) / r = theta / r.
+    float gPrime = 1.0;
+    float gTheta = theta;
     float fisheyeS = rxy > 1e-4 ? gTheta / rxy : rcp(max(negZ, 1e-5));
 
-    float edgeTk = DUAL_FISHEYE_HALF_PI * invK;
-    float sinEdge, cosEdge;
-    sincos(edgeTk, sinEdge, cosEdge);
-    float gEdge = k * sinEdge / max(abs(cosEdge), 1e-5);
-
     float2 discScale = DualFisheyeDiscScale(screenParams);
-    float focalX = screenParams.x * 0.5 * discScale.x / max(abs(gEdge), 1e-5);
-    float focalY = screenParams.y * 0.5 * discScale.y / max(abs(gEdge), 1e-5);
+    float focalX = screenParams.x * 0.5 * discScale.x / DUAL_FISHEYE_HALF_PI;
+    float focalY = screenParams.y * 0.5 * discScale.y / DUAL_FISHEYE_HALF_PI;
 
-    float d2 = dot(lensPos, lensPos);
+    float d2 = max(dot(lensPos, lensPos), 1e-8);
     float r2 = max(rxy * rxy, 1e-8);
     float kCoeff = rxy > 1e-4 ? (gPrime * negZ / d2 - fisheyeS) / r2 : 0.0;
 
@@ -170,9 +158,8 @@ float3 CalcCovariance2DFisheyeDualAware(
     return float3(cov._m00, cov._m01, cov._m11);
 }
 
-// These macros are intentionally declared after the helpers. Calls below this
-// include in SplatUtilities.compute become dual-aware without changing the
-// original single-fisheye functions or the rest of the rendering pipeline.
+// Calls below this include in SplatUtilities.compute become dual-aware while
+// ordinary and sub-360 fisheye rendering keep using the original functions.
 #define IsFisheyeCenterValid(viewPos, fisheyeParams2) \
     IsFisheyeCenterValidDualAware(viewPos, fisheyeParams2)
 
