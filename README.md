@@ -102,23 +102,20 @@ injected at runtime, so no scene object or Gaussian asset needs to be edited.
 1. Enter Play Mode in `XRSimulatorTemplate` or `DesktopPreview`.
 2. Press `T` to start the task.
 3. Find and activate three colored peripheral markers.
-4. Press `Tab` (or the gamepad left shoulder) to switch between the 60-degree
-   perspective baseline and the 180-degree fisheye inspection lens.
+4. Press `Tab` or the left-controller primary button to switch between the
+   60-degree perspective baseline and the 180-degree fisheye inspection lens.
 5. Aim at a marker and use `Space`, left mouse click, or the right-controller
    trigger to activate it.
 
 Additional controls:
 
 - `R`: reset all markers and return to the perspective baseline.
-- `Esc`: end the task and restore the projection values that were active before
+- `T`: stop the task and restore the projection values that were active before
   the task started.
-- `T`: start or stop the task from the bootstrap overlay.
 
-The markers use the same fisheye center mapping returned by
-`GaussianSplatRenderer.GetFisheyeShaderParams`. Their graphics are placed at a
-comfortable HUD depth, allowing the interaction cue to remain usable in stereo
-VR without pretending that ordinary Unity meshes pass through the Gaussian
-covariance shader.
+The markers are projected onto a comfortable HUD depth. The task uses a compact
+fisheye screen mapping for the interaction markers while the Gaussian scene
+continues to use the branch's covariance-aware renderer.
 
 ## What Is Committed
 
