@@ -257,12 +257,12 @@ public static class ChatGPTPerEyeShaderPatcher
             "        float fisheyeT = saturate(_FisheyeParams.x);\n" +
             "        float guardWeight = saturate(fisheyeT * 2.0);\n" +
             "        guardWeight = guardWeight * guardWeight * (3.0 - 2.0 * guardWeight);\n" +
-            "        float guardedAxisLimit = min(96.0, vmin * 0.10);\n" +
+            "        float guardedAxisLimit = min(48.0, vmin * 0.05);\n" +
             "        float axisLimit = lerp(defaultAxisLimit, guardedAxisLimit, guardWeight);\n" +
             "        axis1Length = min(axis1Length, axisLimit);\n" +
             "        axis2Length = min(axis2Length, axisLimit);\n\n" +
             "        // lambda1 is the major eigenvalue. Limit eccentricity before it becomes a screen-spanning ray.\n" +
-            "        float maxAxisRatio = lerp(32.0, 8.0, guardWeight);\n" +
+            "        float maxAxisRatio = lerp(24.0, 6.0, guardWeight);\n" +
             "        axis1Length = min(axis1Length, max(axis2Length, 0.75) * maxAxisRatio);\n" +
             "    }\n\n" +
             "    v1 = axis1Length * diagVec;\n" +
