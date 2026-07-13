@@ -94,6 +94,32 @@ In Play Mode, use the `Projection Control Panel` to adjust:
 The XR Simulator can be used in the editor to move around the scene. Hold `Shift`
 while moving to use the faster movement speed.
 
+## Peripheral Target Inspection Task
+
+The branch includes a lightweight interaction flow for the demo video. It is
+injected at runtime, so no scene object or Gaussian asset needs to be edited.
+
+1. Enter Play Mode in `XRSimulatorTemplate` or `DesktopPreview`.
+2. Press `T` to start the task.
+3. Find and activate three colored peripheral markers.
+4. Press `Tab` (or the gamepad left shoulder) to switch between the 60-degree
+   perspective baseline and the 180-degree fisheye inspection lens.
+5. Aim at a marker and use `Space`, left mouse click, or the right-controller
+   trigger to activate it.
+
+Additional controls:
+
+- `R`: reset all markers and return to the perspective baseline.
+- `Esc`: end the task and restore the projection values that were active before
+  the task started.
+- `T`: start or stop the task from the bootstrap overlay.
+
+The markers use the same fisheye center mapping returned by
+`GaussianSplatRenderer.GetFisheyeShaderParams`. Their graphics are placed at a
+comfortable HUD depth, allowing the interaction cue to remain usable in stereo
+VR without pretending that ordinary Unity meshes pass through the Gaussian
+covariance shader.
+
 ## What Is Committed
 
 This repository commits the Unity project, the clean scene, and the embedded
