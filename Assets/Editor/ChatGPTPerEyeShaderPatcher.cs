@@ -14,8 +14,9 @@ public static class ChatGPTPerEyeShaderPatcher
     const string HlslMarkerV2 = "CHATGPT_PEREYE_JACOBIAN_V2";
     const string ComputeMarkerV2 = "CHATGPT_PEREYE_CENTER_V2";
     const string RuntimeSortMarkerV2 = "CHATGPT_EYE_CENTERED_SORT_V2";
-    const string ComputeSortMarkerV2 = "CHATGPT_RADIAL_SORT_ORIGIN_V2";
-    const string FootprintMarkerV1 = "CHATGPT_FISHEYE_FOOTPRINT_GUARD_V1";
+    const string ComputeSortMarkerV3 = "CHATGPT_STABLE_AXIAL_SORT_V3";
+    const string FootprintMarkerV2 = "CHATGPT_FISHEYE_FOOTPRINT_GUARD_V2";
+    const string CullingMarkerV1 = "CHATGPT_FISHEYE_FOOTPRINT_CULL_V1";
 
     static ChatGPTPerEyeShaderPatcher() => EditorApplication.delayCall += Apply;
 
@@ -30,11 +31,12 @@ public static class ChatGPTPerEyeShaderPatcher
             changed |= PatchRuntimeSorting();
             changed |= PatchComputeSorting();
             changed |= PatchComputeFootprintRegularization();
+            changed |= PatchComputeCulling();
 
             if (changed)
             {
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-                Debug.Log("Applied ChatGPT per-eye projection, eye-centered sorting, and fisheye footprint regularization patches.");
+                Debug.Log("Applied ChatGPT per-eye projection, stable sorting, fisheye footprint regularization, and footprint-aware culling patches.");
             }
             else
             {
@@ -55,16 +57,17 @@ public static class ChatGPTPerEyeShaderPatcher
             bool hlslOk = Contains(HlslPath, HlslMarkerV2);
             bool computeOk = Contains(ComputePath, ComputeMarkerV2);
             bool runtimeSortOk = Contains(RuntimePath, RuntimeSortMarkerV2);
-            bool computeSortOk = Contains(ComputePath, ComputeSortMarkerV2);
-            bool footprintOk = Contains(ComputePath, FootprintMarkerV1);
+            bool computeSortOk = Contains(ComputePath, ComputeSortMarkerV3);
+            bool footprintOk = Contains(ComputePath, FootprintMarkerV2);
+            bool cullingOk = Contains(ComputePath, CullingMarkerV1);
 
-            if (hlslOk && computeOk && runtimeSortOk && computeSortOk && footprintOk)
+            if (hlslOk && computeOk && runtimeSortOk && computeSortOk && footprintOk && cullingOk)
             {
-                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, complete eye view matrices, eye-centered radial sorting, and fisheye footprint regularization are installed.");
+                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, complete eye view matrices, stable axial sorting, bounded fisheye footprints, and footprint-aware culling are installed.");
             }
             else
             {
-                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, RuntimeSorting={runtimeSortOk}, ComputeSorting={computeSortOk}, Footprint={footprintOk}");
+                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, RuntimeSorting={runtimeSortOk}, ComputeSorting={computeSortOk}, Footprint={footprintOk}, Culling={cullingOk}");
             }
         }
         catch (Exception ex)
@@ -164,10 +167,10 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         RequireFile(ComputePath);
         string s = ReadNormalized(ComputePath, out string newline);
-        if (s.Contains(ComputeSortMarkerV2))
+        if (s.Contains(ComputeSortMarkerV3))
             return false;
 
-        const string oldSortBlock =
+        const string originalSortBlock =
             "    float3 pos = LoadSplatPos(origIdx);\n" +
             "    pos = mul(_MatrixMV, float4(pos.xyz, 1)).xyz;\n\n" +
             "    // Fisheye is non-linear: splats can overlap by angular distance instead of\n" +
@@ -177,8 +180,8 @@ public static class ChatGPTPerEyeShaderPatcher
             "    float sortDistance = useRadialSort ? length(pos) : pos.z;\n" +
             "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
 
-        const string newSortBlock =
-            "    // " + ComputeSortMarkerV2 + ": evaluate both metrics from the complete mono/per-eye view matrix.\n" +
+        const string priorPatchedSortBlock =
+            "    // CHATGPT_RADIAL_SORT_ORIGIN_V2: evaluate both metrics from the complete mono/per-eye view matrix.\n" +
             "    float3 objectPos = LoadSplatPos(origIdx);\n" +
             "    float3 viewPos = mul(_MatrixMV, float4(objectPos, 1.0)).xyz;\n\n" +
             "    // Unity camera space looks along negative Z.\n" +
@@ -188,7 +191,19 @@ public static class ChatGPTPerEyeShaderPatcher
             "    float sortDistance = useRadialSort ? radialDepth : axialDepth;\n" +
             "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
 
-        s = ReplaceRequired(s, oldSortBlock, newSortBlock, "current radial sorting block");
+        const string stableSortBlock =
+            "    // " + ComputeSortMarkerV3 + ": preserve stable front-to-back order in the forward hemisphere.\n" +
+            "    // Pure radial sorting changes many pairwise orders as soon as fisheye is enabled,\n" +
+            "    // which turns large edge footprints into a translucent smear.\n" +
+            "    float3 objectPos = LoadSplatPos(origIdx);\n" +
+            "    float3 viewPos = mul(_MatrixMV, float4(objectPos, 1.0)).xyz;\n" +
+            "    float axialDepth = -viewPos.z;\n" +
+            "    float radialDepth = length(viewPos);\n" +
+            "    float sortDistance = axialDepth >= 0.0 ? axialDepth : radialDepth;\n" +
+            "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
+
+        s = ReplaceFirstAvailableRequired(s, stableSortBlock, "fisheye sorting block",
+            priorPatchedSortBlock, originalSortBlock);
         WriteNormalized(ComputePath, s, newline);
         return true;
     }
@@ -197,18 +212,18 @@ public static class ChatGPTPerEyeShaderPatcher
     {
         RequireFile(ComputePath);
         string s = ReadNormalized(ComputePath, out string newline);
-        if (s.Contains(FootprintMarkerV1))
+        if (s.Contains(FootprintMarkerV2))
             return false;
 
-        const string oldAxisBlock =
+        const string originalAxisBlock =
             "    float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));\n" +
             "    float axis1Length = min(sqrt(max(2.0 * lambda1, 0.0)), vmin * 0.5);\n" +
             "    float axis2Length = min(sqrt(max(2.0 * lambda2, 0.0)), vmin * 0.5);\n" +
             "    v1 = axis1Length * diagVec;\n" +
             "    v2 = axis2Length * float2(diagVec.y, -diagVec.x);";
 
-        const string guardedAxisBlock =
-            "    // " + FootprintMarkerV1 + ": a center Jacobian is only a local approximation.\n" +
+        const string priorGuardedAxisBlock =
+            "    // CHATGPT_FISHEYE_FOOTPRINT_GUARD_V1: a center Jacobian is only a local approximation.\n" +
             "    // At close range or near the fisheye boundary it can create screen-spanning streaks.\n" +
             "    // Smoothly limit footprint size and eccentricity only as fisheye strength increases.\n" +
             "    float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));\n" +
@@ -229,8 +244,65 @@ public static class ChatGPTPerEyeShaderPatcher
             "    v1 = axis1Length * diagVec;\n" +
             "    v2 = axis2Length * float2(diagVec.y, -diagVec.x);";
 
-        s = ReplaceRequired(s, oldAxisBlock, guardedAxisBlock,
-            "fisheye covariance axis decomposition block");
+        const string guardedAxisBlock =
+            "    // " + FootprintMarkerV2 + ": the center Jacobian is only a local linearization.\n" +
+            "    // Near the fisheye boundary its major eigenvalue can diverge, creating radial streaks.\n" +
+            "    // Tighten the footprint limit before the singular region while preserving normal projection.\n" +
+            "    float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));\n" +
+            "    float defaultAxisLimit = vmin * 0.5;\n" +
+            "    float axis1Length = min(sqrt(max(2.0 * lambda1, 0.0)), defaultAxisLimit);\n" +
+            "    float axis2Length = min(sqrt(max(2.0 * lambda2, 0.0)), defaultAxisLimit);\n\n" +
+            "    if (_FisheyeParams.x > 0.0001)\n" +
+            "    {\n" +
+            "        float fisheyeT = saturate(_FisheyeParams.x);\n" +
+            "        float guardWeight = saturate(fisheyeT * 2.0);\n" +
+            "        guardWeight = guardWeight * guardWeight * (3.0 - 2.0 * guardWeight);\n" +
+            "        float guardedAxisLimit = min(96.0, vmin * 0.10);\n" +
+            "        float axisLimit = lerp(defaultAxisLimit, guardedAxisLimit, guardWeight);\n" +
+            "        axis1Length = min(axis1Length, axisLimit);\n" +
+            "        axis2Length = min(axis2Length, axisLimit);\n\n" +
+            "        // lambda1 is the major eigenvalue. Limit eccentricity before it becomes a screen-spanning ray.\n" +
+            "        float maxAxisRatio = lerp(32.0, 8.0, guardWeight);\n" +
+            "        axis1Length = min(axis1Length, max(axis2Length, 0.75) * maxAxisRatio);\n" +
+            "    }\n\n" +
+            "    v1 = axis1Length * diagVec;\n" +
+            "    v2 = axis2Length * float2(diagVec.y, -diagVec.x);";
+
+        s = ReplaceFirstAvailableRequired(s, guardedAxisBlock,
+            "fisheye covariance axis decomposition block", priorGuardedAxisBlock, originalAxisBlock);
+        WriteNormalized(ComputePath, s, newline);
+        return true;
+    }
+
+    static bool PatchComputeCulling()
+    {
+        RequireFile(ComputePath);
+        string s = ReadNormalized(ComputePath, out string newline);
+        if (s.Contains(CullingMarkerV1))
+            return false;
+
+        const string oldCullingBlock =
+            "        // Match PlayCanvas' footprint-aware x/y frustum test for ordinary\n" +
+            "        // perspective. Fisheye stays unculled here because the footprint warp is\n" +
+            "        // non-linear and can remove visible splats while moving.\n" +
+            "        float lMax = 4.0 * max(length(view.axis1), length(view.axis2));\n" +
+            "        bool belowMinimumSize = lMax < _MinPixelSize;\n" +
+            "        float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;\n" +
+            "        bool outsidePerspectiveView = _FisheyeParams.x <= 0.0001 &&\n" +
+            "            any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww);\n" +
+            "        if (belowMinimumSize || outsidePerspectiveView)";
+
+        const string newCullingBlock =
+            "        // " + CullingMarkerV1 + ": use the projected footprint for both perspective and fisheye.\n" +
+            "        // This rejects giant off-screen ellipses while retaining splats whose bounded footprint crosses the edge.\n" +
+            "        float lMax = 4.0 * max(length(view.axis1), length(view.axis2));\n" +
+            "        bool belowMinimumSize = lMax < _MinPixelSize;\n" +
+            "        float2 cullScale = centerClipPos.ww / _VecScreenParams.xy;\n" +
+            "        bool outsideView = any(abs(centerClipPos.xy) - lMax * cullScale > centerClipPos.ww * 1.05);\n" +
+            "        if (belowMinimumSize || outsideView)";
+
+        s = ReplaceRequired(s, oldCullingBlock, newCullingBlock,
+            "projection footprint culling block");
         WriteNormalized(ComputePath, s, newline);
         return true;
     }
@@ -262,6 +334,18 @@ public static class ChatGPTPerEyeShaderPatcher
         if (!source.Contains(oldText))
             throw new InvalidOperationException("Could not locate " + label + ". The package source does not match the expected current branch layout.");
         return source.Replace(oldText, newText);
+    }
+
+    static string ReplaceFirstAvailableRequired(string source, string newText, string label,
+        params string[] candidates)
+    {
+        foreach (string candidate in candidates)
+        {
+            if (source.Contains(candidate))
+                return source.Replace(candidate, newText);
+        }
+
+        throw new InvalidOperationException("Could not locate " + label + ". The package source does not match either the clean or previously patched layout.");
     }
 }
 #endif
