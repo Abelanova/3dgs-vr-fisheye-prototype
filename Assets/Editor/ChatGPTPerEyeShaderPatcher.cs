@@ -15,6 +15,7 @@ public static class ChatGPTPerEyeShaderPatcher
     const string ComputeMarkerV2 = "CHATGPT_PEREYE_CENTER_V2";
     const string RuntimeSortMarkerV2 = "CHATGPT_EYE_CENTERED_SORT_V2";
     const string ComputeSortMarkerV2 = "CHATGPT_RADIAL_SORT_ORIGIN_V2";
+    const string FootprintMarkerV1 = "CHATGPT_FISHEYE_FOOTPRINT_GUARD_V1";
 
     static ChatGPTPerEyeShaderPatcher() => EditorApplication.delayCall += Apply;
 
@@ -28,11 +29,12 @@ public static class ChatGPTPerEyeShaderPatcher
             changed |= PatchComputeProjectionMarker();
             changed |= PatchRuntimeSorting();
             changed |= PatchComputeSorting();
+            changed |= PatchComputeFootprintRegularization();
 
             if (changed)
             {
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-                Debug.Log("Applied ChatGPT per-eye projection and eye-centered sorting patches.");
+                Debug.Log("Applied ChatGPT per-eye projection, eye-centered sorting, and fisheye footprint regularization patches.");
             }
             else
             {
@@ -54,14 +56,15 @@ public static class ChatGPTPerEyeShaderPatcher
             bool computeOk = Contains(ComputePath, ComputeMarkerV2);
             bool runtimeSortOk = Contains(RuntimePath, RuntimeSortMarkerV2);
             bool computeSortOk = Contains(ComputePath, ComputeSortMarkerV2);
+            bool footprintOk = Contains(ComputePath, FootprintMarkerV1);
 
-            if (hlslOk && computeOk && runtimeSortOk && computeSortOk)
+            if (hlslOk && computeOk && runtimeSortOk && computeSortOk && footprintOk)
             {
-                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, complete eye view matrices, and eye-centered radial sorting are installed.");
+                Debug.Log("ChatGPT per-eye verification passed: scale-consistent center projection, per-eye Jacobian, complete eye view matrices, eye-centered radial sorting, and fisheye footprint regularization are installed.");
             }
             else
             {
-                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, RuntimeSorting={runtimeSortOk}, ComputeSorting={computeSortOk}");
+                Debug.LogError($"ChatGPT per-eye verification failed. HLSL={hlslOk}, Compute={computeOk}, RuntimeSorting={runtimeSortOk}, ComputeSorting={computeSortOk}, Footprint={footprintOk}");
             }
         }
         catch (Exception ex)
@@ -186,6 +189,48 @@ public static class ChatGPTPerEyeShaderPatcher
             "    _SplatSortDistances[idx] = FloatToSortableUint(sortDistance);";
 
         s = ReplaceRequired(s, oldSortBlock, newSortBlock, "current radial sorting block");
+        WriteNormalized(ComputePath, s, newline);
+        return true;
+    }
+
+    static bool PatchComputeFootprintRegularization()
+    {
+        RequireFile(ComputePath);
+        string s = ReadNormalized(ComputePath, out string newline);
+        if (s.Contains(FootprintMarkerV1))
+            return false;
+
+        const string oldAxisBlock =
+            "    float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));\n" +
+            "    float axis1Length = min(sqrt(max(2.0 * lambda1, 0.0)), vmin * 0.5);\n" +
+            "    float axis2Length = min(sqrt(max(2.0 * lambda2, 0.0)), vmin * 0.5);\n" +
+            "    v1 = axis1Length * diagVec;\n" +
+            "    v2 = axis2Length * float2(diagVec.y, -diagVec.x);";
+
+        const string guardedAxisBlock =
+            "    // " + FootprintMarkerV1 + ": a center Jacobian is only a local approximation.\n" +
+            "    // At close range or near the fisheye boundary it can create screen-spanning streaks.\n" +
+            "    // Smoothly limit footprint size and eccentricity only as fisheye strength increases.\n" +
+            "    float vmin = min(1024.0, min(_VecScreenParams.x, _VecScreenParams.y));\n" +
+            "    float defaultAxisLimit = vmin * 0.5;\n" +
+            "    float axis1Length = min(sqrt(max(2.0 * lambda1, 0.0)), defaultAxisLimit);\n" +
+            "    float axis2Length = min(sqrt(max(2.0 * lambda2, 0.0)), defaultAxisLimit);\n\n" +
+            "    if (_FisheyeParams.x > 0.0001)\n" +
+            "    {\n" +
+            "        float fisheyeT = saturate(_FisheyeParams.x);\n" +
+            "        float guardedAxisLimit = min(192.0, vmin * 0.18);\n" +
+            "        float axisLimit = lerp(defaultAxisLimit, guardedAxisLimit, fisheyeT);\n" +
+            "        axis1Length = min(axis1Length, axisLimit);\n" +
+            "        axis2Length = min(axis2Length, axisLimit);\n\n" +
+            "        // lambda1 is the major eigenvalue. Cap only the long axis so details are not blurred wider.\n" +
+            "        float maxAxisRatio = lerp(64.0, 12.0, fisheyeT);\n" +
+            "        axis1Length = min(axis1Length, max(axis2Length, 0.5) * maxAxisRatio);\n" +
+            "    }\n\n" +
+            "    v1 = axis1Length * diagVec;\n" +
+            "    v2 = axis2Length * float2(diagVec.y, -diagVec.x);";
+
+        s = ReplaceRequired(s, oldAxisBlock, guardedAxisBlock,
+            "fisheye covariance axis decomposition block");
         WriteNormalized(ComputePath, s, newline);
         return true;
     }
