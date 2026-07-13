@@ -184,7 +184,7 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
         targetObject.transform.localScale = Vector3.one * 0.28f;
 
         var marker = targetObject.AddComponent<PeripheralInspectionTarget>();
-        marker.Initialize(this, index, color, targetObject.transform.localScale);
+        marker.Initialize(index, color, targetObject.transform.localScale);
         targets.Add(marker);
 
         var lightObject = new GameObject("Marker Glow");
@@ -334,7 +334,7 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
         bool gamepad = Gamepad.current != null && Gamepad.current.rightTrigger.wasPressedThisFrame;
 
         bool xrTrigger = false;
-        InputDevice device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        UnityEngine.XR.InputDevice device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
         if (device.isValid && device.TryGetFeatureValue(CommonUsages.triggerButton, out bool triggerPressed))
         {
             xrTrigger = triggerPressed && !previousXrTrigger;
@@ -388,7 +388,6 @@ public sealed class PeripheralInspectionTask : MonoBehaviour
 
 public sealed class PeripheralInspectionTarget : MonoBehaviour
 {
-    PeripheralInspectionTask task;
     Renderer targetRenderer;
     Material runtimeMaterial;
     Vector3 baseScale;
@@ -396,9 +395,8 @@ public sealed class PeripheralInspectionTarget : MonoBehaviour
 
     public bool IsActivated { get; private set; }
 
-    public void Initialize(PeripheralInspectionTask owningTask, int index, Color color, Vector3 initialScale)
+    public void Initialize(int index, Color color, Vector3 initialScale)
     {
-        task = owningTask;
         targetColor = color;
         baseScale = initialScale;
         targetRenderer = GetComponent<Renderer>();
