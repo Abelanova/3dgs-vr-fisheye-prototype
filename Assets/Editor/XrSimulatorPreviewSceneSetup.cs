@@ -154,6 +154,11 @@ public static class XrSimulatorPreviewSceneSetup
         splat.m_SortNthFrame = 1;
         splat.m_FisheyeFieldOfView = 60.0f;
 
+        var highQualityFisheye = cameraObject.AddComponent<DesktopHighQualityFisheye>();
+        var highQualityFisheyeSo = new SerializedObject(highQualityFisheye);
+        highQualityFisheyeSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        highQualityFisheyeSo.ApplyModifiedPropertiesWithoutUndo();
+
         var fovController = cameraObject.AddComponent<CameraFovController>();
         var fovControllerSo = new SerializedObject(fovController);
         fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
@@ -168,6 +173,7 @@ public static class XrSimulatorPreviewSceneSetup
         keyboardControlsSo.ApplyModifiedPropertiesWithoutUndo();
 
         CreateDesktopProjectionPanel(fovController, splat);
+        CreateDesktopPeripheralSearchTask(camera, fovController, splat, highQualityFisheye);
 
         var lightObject = new GameObject("Directional Light");
         var light = lightObject.AddComponent<Light>();
@@ -181,6 +187,46 @@ public static class XrSimulatorPreviewSceneSetup
         EditorSceneManager.CloseScene(scene, true);
 
         Debug.Log("Created Assets/Scenes/DesktopPreview.unity. Open it, assign a GaussianSplatAsset to PutAssetsHere, then enter Play Mode. Use right mouse to look, WASD and Q/E to move, and Shift to move faster.");
+    }
+
+    [MenuItem("Tools/VR Preview/Add Peripheral Search Task To Open Scene")]
+    public static void AddPeripheralSearchTaskToOpenScene()
+    {
+        var camera = Camera.main;
+        if (camera == null)
+            camera = FindFirstSceneObject<Camera>();
+
+        if (camera == null)
+        {
+            Debug.LogError("Could not find a Camera in the open scene.");
+            return;
+        }
+
+        var splat = FindFirstSceneObject<GaussianSplatRenderer>();
+        var fovController = camera.GetComponent<CameraFovController>();
+        if (fovController == null)
+            fovController = camera.gameObject.AddComponent<CameraFovController>();
+
+        var fovControllerSo = new SerializedObject(fovController);
+        fovControllerSo.FindProperty("targetCamera").objectReferenceValue = camera;
+        if (splat != null)
+            fovControllerSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        fovControllerSo.ApplyModifiedPropertiesWithoutUndo();
+
+        var highQualityFisheye = camera.GetComponent<DesktopHighQualityFisheye>();
+        if (highQualityFisheye == null)
+            highQualityFisheye = camera.gameObject.AddComponent<DesktopHighQualityFisheye>();
+
+        if (splat != null)
+        {
+            var highQualityFisheyeSo = new SerializedObject(highQualityFisheye);
+            highQualityFisheyeSo.FindProperty("targetSplat").objectReferenceValue = splat;
+            highQualityFisheyeSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        CreateDesktopPeripheralSearchTask(camera, fovController, splat, highQualityFisheye);
+        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+        Debug.Log("Added desktop peripheral search task. Enter Play Mode, widen FOV/fisheye, then select the off-axis beacon with the red cursor ray.");
     }
 
     static GameObject CreateController(string name, Transform parent, Vector3 fallbackPosition, bool left)
@@ -228,6 +274,30 @@ public static class XrSimulatorPreviewSceneSetup
         ray.selectInput = selectReader;
         ray.uiPressInput = selectReader;
 
+    }
+
+    static void CreateDesktopPeripheralSearchTask(Camera camera, CameraFovController fovController,
+        GaussianSplatRenderer splat, DesktopHighQualityFisheye highQualityFisheye)
+    {
+        var task = FindFirstSceneObject<DesktopPeripheralSearchTask>();
+        if (task == null)
+        {
+            var taskObject = new GameObject("Desktop Peripheral Search Task");
+            task = taskObject.AddComponent<DesktopPeripheralSearchTask>();
+        }
+
+        var taskSo = new SerializedObject(task);
+        taskSo.FindProperty("targetCamera").objectReferenceValue = camera;
+        taskSo.FindProperty("fovController").objectReferenceValue = fovController;
+        taskSo.FindProperty("targetSplat").objectReferenceValue = splat;
+        taskSo.FindProperty("highQualityFisheye").objectReferenceValue = highQualityFisheye;
+        taskSo.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static T FindFirstSceneObject<T>() where T : Object
+    {
+        var objects = Object.FindObjectsByType<T>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        return objects.Length > 0 ? objects[0] : null;
     }
 
     static void CreateSimulator(Transform head, Transform leftController, Transform rightController)

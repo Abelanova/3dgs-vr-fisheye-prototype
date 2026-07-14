@@ -825,7 +825,7 @@ MonoBehaviour:
   targetSplat: {fileID: 2107022773}
   verticalFov: 60
   cameraFovLimit: 140
-  squareEditorGameView: 1
+  squareEditorGameView: 0
 --- !u!114 &1052589776
 MonoBehaviour:
   m_ObjectHideFlags: 0

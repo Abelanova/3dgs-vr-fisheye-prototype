@@ -9,7 +9,7 @@ public sealed class CameraFovController : MonoBehaviour
     [SerializeField, Range(20.0f, 360.0f)] float verticalFov = 60.0f;
     [SerializeField, Range(20.0f, 170.0f)] float cameraFovLimit = 140.0f;
 #if UNITY_EDITOR
-    [SerializeField] bool squareEditorGameView = true;
+    [SerializeField] bool squareEditorGameView;
 #endif
 
     public float verticalFieldOfView

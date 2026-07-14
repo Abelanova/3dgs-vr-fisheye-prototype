@@ -12,6 +12,8 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
     [SerializeField, Min(0.005f)] float positionRefreshDistance = 0.02f;
     [SerializeField, Range(60.0f, 130.0f)] float directPerspectiveFovLimit = 100.0f;
     [SerializeField] bool highQualityEnabled = true;
+    [SerializeField] LayerMask additionalCaptureLayers = 0;
+    [SerializeField, Min(0.0f)] float additionalCaptureRefreshInterval = 0.05f;
 
     static readonly string[] FaceTextureNames =
     {
@@ -39,10 +41,36 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
     bool hasValidCapture;
     bool cubemapActive;
     Vector3 capturedPosition;
+    float nextAdditionalCaptureTime;
 
     bool WantsHighQuality =>
         highQualityEnabled && targetSplat != null && targetSplat.isActiveAndEnabled &&
         targetSplat.asset != null;
+
+    public LayerMask additionalCaptureLayerMask
+    {
+        get => additionalCaptureLayers;
+        set
+        {
+            additionalCaptureLayers = value;
+            ApplyAdditionalCaptureLayers();
+            hasValidCapture = false;
+        }
+    }
+
+    public void AddAdditionalCaptureLayer(int layer)
+    {
+        if (layer < 0 || layer > 31)
+            return;
+
+        additionalCaptureLayerMask = additionalCaptureLayers.value | (1 << layer);
+    }
+
+    public void InvalidateCapture()
+    {
+        hasValidCapture = false;
+        nextAdditionalCaptureTime = 0.0f;
+    }
 
     void Awake() => outputCamera = GetComponent<Camera>();
 
@@ -80,7 +108,10 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
 
         outputMarker.enabled = active;
         outputCanvas.gameObject.SetActive(active);
-        bool needsCapture = active && (!hasValidCapture ||
+        bool hasDynamicCaptureLayers = additionalCaptureLayers.value != 0;
+        bool additionalCaptureDue = hasDynamicCaptureLayers &&
+            Time.unscaledTime >= nextAdditionalCaptureTime;
+        bool needsCapture = active && (additionalCaptureDue || !hasValidCapture ||
             (outputCamera.transform.position - capturedPosition).sqrMagnitude >=
             positionRefreshDistance * positionRefreshDistance);
         for (int i = 0; i < faceCameras.Length; ++i)
@@ -101,6 +132,8 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
         {
             capturedPosition = outputCamera.transform.position;
             hasValidCapture = true;
+            if (hasDynamicCaptureLayers)
+                nextAdditionalCaptureTime = Time.unscaledTime + additionalCaptureRefreshInterval;
         }
 
         if (!active)
@@ -174,7 +207,7 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
             camera.rect = new Rect(0, 0, 1, 1);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Color.black;
-            camera.cullingMask = 0;
+            camera.cullingMask = additionalCaptureLayers;
             camera.allowMSAA = false;
             camera.allowHDR = true;
             camera.stereoTargetEye = StereoTargetEyeMask.None;
@@ -213,6 +246,18 @@ public sealed class DesktopHighQualityFisheye : MonoBehaviour
         outputImage.texture = faceTextures[4];
         UpdateOutputRect();
         hasValidCapture = false;
+    }
+
+    void ApplyAdditionalCaptureLayers()
+    {
+        if (faceCameras == null)
+            return;
+
+        foreach (Camera faceCamera in faceCameras)
+        {
+            if (faceCamera != null)
+                faceCamera.cullingMask = additionalCaptureLayers;
+        }
     }
 
     void UpdateOutputRect()
